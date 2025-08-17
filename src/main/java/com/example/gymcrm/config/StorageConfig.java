@@ -1,8 +1,9 @@
 package com.example.gymcrm.config;
 
 import com.example.gymcrm.domain.*;
-import org.springframework.context.annotation.*;
-import org.springframework.context.support.PropertySourcesPlaceholderConfigurer;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.PropertySource;
 
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -10,11 +11,6 @@ import java.util.concurrent.ConcurrentHashMap;
 @Configuration
 @PropertySource("classpath:application.properties")
 public class StorageConfig {
-
-    @Bean
-    public static PropertySourcesPlaceholderConfigurer propertySourcesPlaceholderConfigurer() {
-        return new PropertySourcesPlaceholderConfigurer();
-    }
 
     @Bean(name = "userStorage")
     public Map<Long, User> userStorage() { return new ConcurrentHashMap<>(); }
