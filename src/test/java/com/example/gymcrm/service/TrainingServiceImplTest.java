@@ -34,13 +34,8 @@ class TrainingServiceImplTest {
         tr.setTrainingDate(LocalDateTime.now());
         tr.setDurationMinutes(30);
 
-        when(trainingTypeDao.findByName("Cardio"))
-                .thenReturn(Optional.of(new TrainingType()));
-        when(trainingDao.save(any())).thenAnswer(inv -> {
-            Training x = inv.getArgument(0);
-            x.setId(10L);
-            return x;
-        });
+        when(trainingTypeDao.findByName("Cardio")).thenReturn(Optional.of(new TrainingType()));
+        when(trainingDao.save(any())).thenAnswer(inv -> { Training x = inv.getArgument(0); x.setId(10L); return x; });
 
         Training saved = service.create(tr);
         assertEquals(10L, saved.getId());
@@ -53,8 +48,7 @@ class TrainingServiceImplTest {
         tr.setTrainingName("Yoga Flow");
         tr.setTrainingType("Yoga");
 
-        when(trainingTypeDao.findByName("Yoga"))
-                .thenReturn(Optional.empty());
+        when(trainingTypeDao.findByName("Yoga")).thenReturn(Optional.empty());
 
         assertThrows(NotFoundException.class, () -> service.create(tr));
         verify(trainingDao, never()).save(any());
