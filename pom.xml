@@ -21,7 +21,7 @@
         <dependency>
             <groupId>org.springframework</groupId>
             <artifactId>spring-context</artifactId>
-            <version>6.1.6</version>
+            <version>6.2.7</version>
         </dependency>
 
         <!-- Logging -->
@@ -33,7 +33,7 @@
         <dependency>
             <groupId>ch.qos.logback</groupId>
             <artifactId>logback-classic</artifactId>
-            <version>1.5.6</version>
+            <version>1.5.13</version>
             <scope>runtime</scope>
         </dependency>
 
