@@ -1,35 +1,37 @@
+// src/main/java/com/example/gymcrm/service/impl/TraineeServiceImpl.java
 package com.example.gymcrm.service.impl;
 
 import com.example.gymcrm.dao.TraineeDao;
 import com.example.gymcrm.dao.UserDao;
-import com.example.gymcrm.domain.Trainee;
-import com.example.gymcrm.domain.User;
+import com.example.gymcrm.entity.Trainee;
+import com.example.gymcrm.entity.User;
 import com.example.gymcrm.exceptions.NotFoundException;
 import com.example.gymcrm.service.TraineeService;
 import com.example.gymcrm.util.PasswordGenerator;
 import com.example.gymcrm.util.UsernameGenerator;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Autowired;
+import org.slf4j.Logger; import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Optional;
+import java.util.*;
 
 @Service
+@Transactional
 public class TraineeServiceImpl implements TraineeService {
     private static final Logger log = LoggerFactory.getLogger(TraineeServiceImpl.class);
 
-    private TraineeDao traineeDao;
-    private UserDao userDao;
-    private UsernameGenerator usernameGenerator;
-    private PasswordGenerator passwordGenerator;
+    private final TraineeDao traineeDao;
+    private final UserDao userDao;
+    private final UsernameGenerator usernameGenerator;
+    private final PasswordGenerator passwordGenerator;
 
-    @Autowired public void setTraineeDao(TraineeDao traineeDao) { this.traineeDao = traineeDao; }
-    @Autowired public void setUserDao(UserDao userDao) { this.userDao = userDao; }
-    @Autowired public void setUsernameGenerator(UsernameGenerator usernameGenerator) { this.usernameGenerator = usernameGenerator; }
-    @Autowired public void setPasswordGenerator(PasswordGenerator passwordGenerator) { this.passwordGenerator = passwordGenerator; }
+    public TraineeServiceImpl(TraineeDao traineeDao, UserDao userDao,
+                              UsernameGenerator usernameGenerator, PasswordGenerator passwordGenerator) {
+        this.traineeDao = traineeDao;
+        this.userDao = userDao;
+        this.usernameGenerator = usernameGenerator;
+        this.passwordGenerator = passwordGenerator;
+    }
 
     @Override
     public Trainee create(Trainee trainee, String firstName, String lastName, boolean active) {
@@ -44,9 +46,9 @@ public class TraineeServiceImpl implements TraineeService {
         user.setActive(active);
         userDao.save(user);
 
-        trainee.setUserId(user.getId());
+        trainee.setUser(user);
         Trainee saved = traineeDao.save(trainee);
-        log.info("Created trainee id={} username={}", saved.getId(), username); // never log password
+        log.info("Created trainee id={} username={}", saved.getId(), username);
         return saved;
     }
 
@@ -63,11 +65,15 @@ public class TraineeServiceImpl implements TraineeService {
     public void delete(Long traineeId) {
         Trainee existing = traineeDao.findById(traineeId)
                 .orElseThrow(() -> new NotFoundException("Trainee not found"));
+        Long userId = existing.getUser() != null ? existing.getUser().getId() : null;
         traineeDao.deleteById(traineeId);
-        if (existing.getUserId() != null) userDao.deleteById(existing.getUserId());
+        if (userId != null) userDao.deleteById(userId);
         log.info("Deleted trainee id={}", traineeId);
     }
 
-    @Override public Optional<Trainee> getById(Long traineeId) { return traineeDao.findById(traineeId); }
-    @Override public List<Trainee> list() { return new ArrayList<>(traineeDao.findAll()); }
+    @Override @Transactional(readOnly = true)
+    public Optional<Trainee> getById(Long id){ return traineeDao.findById(id); }
+
+    @Override @Transactional(readOnly = true)
+    public List<Trainee> list(){ return new ArrayList<>(traineeDao.findAll()); }
 }

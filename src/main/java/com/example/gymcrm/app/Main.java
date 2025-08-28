@@ -2,7 +2,7 @@ package com.example.gymcrm.app;
 
 import com.example.gymcrm.config.AppConfig;
 import com.example.gymcrm.dao.TrainingTypeDao;
-import com.example.gymcrm.domain.*;
+import com.example.gymcrm.entity.*;
 import com.example.gymcrm.facade.GymFacade;
 import org.springframework.context.annotation.AnnotationConfigApplicationContext;
 
@@ -15,27 +15,34 @@ public class Main {
             var facade = ctx.getBean(GymFacade.class);
             var typeDao = ctx.getBean(TrainingTypeDao.class);
 
-            TrainingType cardio = new TrainingType(); cardio.setName("Cardio");
-            typeDao.save(cardio);
+            // Ensure at least one training type exists
+            TrainingType cardio = typeDao.findByName("Cardio").orElseGet(() -> {
+                TrainingType tt = new TrainingType();
+                tt.setName("Cardio");
+                return typeDao.save(tt);
+            });
 
+            // Create a Trainee (user will be generated inside service)
             Trainee trainee = new Trainee();
             trainee.setAddress("Tbilisi");
             trainee.setDateOfBirth(LocalDate.of(2003, 5, 2));
             Trainee savedTrainee = facade.createTraineeProfile(trainee, "John", "Smith", true);
 
+            // Create a Trainer (user will be generated inside service)
             Trainer trainer = new Trainer();
             trainer.setSpecialization("Strength");
             Trainer savedTrainer = facade.createTrainerProfile(trainer, "Jane", "Doe", true);
 
-            Training tr = new Training();
-            tr.setTraineeId(savedTrainee.getId());
-            tr.setTrainerId(savedTrainer.getId());
-            tr.setTrainingName("Morning Run");
-            tr.setTrainingType("Cardio");
-            tr.setTrainingDate(LocalDateTime.now());
-            tr.setDurationMinutes(45);
+            // Create a Training referencing the saved entities and existing type
+            Training training = new Training();
+            training.setTrainee(savedTrainee);
+            training.setTrainer(savedTrainer);
+            training.setTrainingType(cardio);
+            training.setTrainingName("Morning Run");
+            training.setTrainingDate(LocalDateTime.now());
+            training.setDurationMinutes(45);
 
-            facade.createTraining(tr);
+            facade.createTraining(training);
         }
     }
 }

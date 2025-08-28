@@ -12,7 +12,6 @@ import java.util.Collection;
 import java.util.Optional;
 
 @Repository
-@Profile("jpa")
 public class JpaTrainerDao implements TrainerDao {
 
     @PersistenceContext

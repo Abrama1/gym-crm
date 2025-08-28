@@ -1,6 +1,6 @@
 package com.example.gymcrm.dao;
 
-import com.example.gymcrm.domain.Trainer;
+import com.example.gymcrm.entity.Trainer;
 import java.util.Collection;
 import java.util.Optional;
 
