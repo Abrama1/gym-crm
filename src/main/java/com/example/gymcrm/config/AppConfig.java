@@ -6,5 +6,5 @@ import org.springframework.context.annotation.Import;
 
 @Configuration
 @ComponentScan(basePackages = "com.example.gymcrm")
-@Import(StorageConfig.class)
+@Import({StorageConfig.class, JpaConfig.class})
 public class AppConfig { }
