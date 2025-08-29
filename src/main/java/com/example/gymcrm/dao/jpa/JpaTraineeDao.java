@@ -17,33 +17,41 @@ public class JpaTraineeDao implements TraineeDao {
     private EntityManager em;
 
     @Override
+    @Transactional(readOnly = true)
     public Optional<Trainee> findById(Long id) {
         return Optional.ofNullable(em.find(Trainee.class, id));
     }
 
     @Override
+    @Transactional(readOnly = true)
     public Optional<Trainee> findByUsername(String username) {
-        return em.createQuery("""
+        var list = em.createQuery("""
                 select t from Trainee t
                   join t.user u
                  where lower(u.username) = lower(:u)
                 """, Trainee.class)
                 .setParameter("u", username)
-                .getResultStream().findFirst();
+                .setMaxResults(1)
+                .getResultList();
+        return list.stream().findFirst();
     }
 
     @Override
+    @Transactional(readOnly = true)
     public Optional<Trainee> findByUserId(Long userId) {
-        return em.createQuery("""
+        var list = em.createQuery("""
                 select t from Trainee t
                   join t.user u
                  where u.id = :id
                 """, Trainee.class)
                 .setParameter("id", userId)
-                .getResultStream().findFirst();
+                .setMaxResults(1)
+                .getResultList();
+        return list.stream().findFirst();
     }
 
     @Override
+    @Transactional(readOnly = true)
     public Collection<Trainee> findAll() {
         return em.createQuery("select t from Trainee t", Trainee.class).getResultList();
     }

@@ -17,33 +17,41 @@ public class JpaTrainerDao implements TrainerDao {
     private EntityManager em;
 
     @Override
+    @Transactional(readOnly = true)
     public Optional<Trainer> findById(Long id) {
         return Optional.ofNullable(em.find(Trainer.class, id));
     }
 
     @Override
+    @Transactional(readOnly = true)
     public Optional<Trainer> findByUsername(String username) {
-        return em.createQuery("""
+        var list = em.createQuery("""
                 select t from Trainer t
                   join t.user u
                  where lower(u.username) = lower(:u)
                 """, Trainer.class)
                 .setParameter("u", username)
-                .getResultStream().findFirst();
+                .setMaxResults(1)
+                .getResultList();
+        return list.stream().findFirst();
     }
 
     @Override
+    @Transactional(readOnly = true)
     public Optional<Trainer> findByUserId(Long userId) {
-        return em.createQuery("""
+        var list = em.createQuery("""
                 select t from Trainer t
                   join t.user u
                  where u.id = :id
                 """, Trainer.class)
                 .setParameter("id", userId)
-                .getResultStream().findFirst();
+                .setMaxResults(1)
+                .getResultList();
+        return list.stream().findFirst();
     }
 
     @Override
+    @Transactional(readOnly = true)
     public Collection<Trainer> findAll() {
         return em.createQuery("select t from Trainer t", Trainer.class).getResultList();
     }
@@ -56,6 +64,7 @@ public class JpaTrainerDao implements TrainerDao {
     }
 
     @Override
+    @Transactional(readOnly = true)
     public Collection<Trainer> listNotAssignedToTrainee(String traineeUsername) {
         return em.createQuery("""
             select tr from Trainer tr

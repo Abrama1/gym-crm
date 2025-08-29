@@ -4,7 +4,6 @@ import com.example.gymcrm.dao.UserDao;
 import com.example.gymcrm.entity.User;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.PersistenceContext;
-import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Repository;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -18,20 +17,24 @@ public class JpaUserDao implements UserDao {
     private EntityManager em;
 
     @Override
+    @Transactional(readOnly = true)
     public Optional<User> findById(Long id) {
         return Optional.ofNullable(em.find(User.class, id));
     }
 
     @Override
+    @Transactional(readOnly = true)
     public Optional<User> findByUsername(String username) {
-        return em.createQuery(
+        var list = em.createQuery(
                         "select u from User u where lower(u.username) = lower(:u)", User.class)
                 .setParameter("u", username)
-                .getResultStream()
-                .findFirst();
+                .setMaxResults(1)
+                .getResultList();
+        return list.stream().findFirst();
     }
 
     @Override
+    @Transactional(readOnly = true)
     public Collection<User> findAll() {
         return em.createQuery("select u from User u", User.class).getResultList();
     }
@@ -39,10 +42,7 @@ public class JpaUserDao implements UserDao {
     @Override
     @Transactional
     public User save(User u) {
-        if (u.getId() == null) {
-            em.persist(u);
-            return u;
-        }
+        if (u.getId() == null) { em.persist(u); return u; }
         return em.merge(u);
     }
 

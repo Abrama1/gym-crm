@@ -13,24 +13,29 @@ import org.springframework.context.annotation.AnnotationConfigApplicationContext
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Optional;
 
 public class Main {
     public static void main(String[] args) {
-        try (var ctx = new AnnotationConfigApplicationContext(AppConfig.class)) {
+        AnnotationConfigApplicationContext ctx = new AnnotationConfigApplicationContext(AppConfig.class);
+        try {
             var traineeService = ctx.getBean(TraineeService.class);
             var trainerService = ctx.getBean(TrainerService.class);
             var trainingService = ctx.getBean(TrainingService.class);
             var typeDao = ctx.getBean(TrainingTypeDao.class);
 
-            // Ensure training types exist
-            TrainingType cardio = typeDao.findByName("Cardio").orElseGet(() -> {
-                TrainingType tt = new TrainingType(); tt.setName("Cardio"); return typeDao.save(tt);
-            });
-            typeDao.findByName("Strength").orElseGet(() -> {
-                TrainingType tt = new TrainingType(); tt.setName("Strength"); return typeDao.save(tt);
-            });
+            // Seed types in a straightforward way
+            TrainingType cardio;
+            Optional<TrainingType> found = typeDao.findByName("Cardio");
+            if (found.isPresent()) {
+                cardio = found.get();
+            } else {
+                cardio = new TrainingType();
+                cardio.setName("Cardio");
+                cardio = typeDao.save(cardio);
+            }
 
-            // Create a trainee & trainer
+            // Create profiles
             Trainee trainee = new Trainee();
             trainee.setAddress("Tbilisi");
             trainee.setDateOfBirth(LocalDate.of(2003, 5, 2));
@@ -40,19 +45,21 @@ public class Main {
             trainer.setSpecialization("Strength");
             Trainer savedTrainer = trainerService.create(trainer, "Jane", "Doe", true);
 
-            // Prepare credentials from created users
-            String traineeUsername = savedTrainee.getUser().getUsername();
-            String traineePassword = savedTrainee.getUser().getPassword();
-            Credentials traineeCreds = new Credentials(traineeUsername, traineePassword);
-
-            String trainerUsername = savedTrainer.getUser().getUsername();
-            String trainerPassword = savedTrainer.getUser().getPassword();
-            Credentials trainerCreds = new Credentials(trainerUsername, trainerPassword);
+            // Credentials (don’t print passwords)
+            Credentials traineeCreds = new Credentials(
+                    savedTrainee.getUser().getUsername(),
+                    savedTrainee.getUser().getPassword()
+            );
+            Credentials trainerCreds = new Credentials(
+                    savedTrainer.getUser().getUsername(),
+                    savedTrainer.getUser().getPassword()
+            );
 
             // Assign trainer to trainee
-            traineeService.setTrainers(traineeCreds, traineeUsername, List.of(trainerUsername));
+            traineeService.setTrainers(traineeCreds, traineeCreds.getUsername(),
+                    List.of(trainerCreds.getUsername()));
 
-            // Create a training for that pair
+            // Create a training
             Training tr = new Training();
             tr.setTrainee(savedTrainee);
             tr.setTrainer(savedTrainer);
@@ -62,26 +69,20 @@ public class Main {
             tr.setDurationMinutes(40);
             trainingService.create(tr);
 
-            // Query trainings for trainee with criteria
+            // Query with criteria (trainee view)
             TrainingCriteria crit = new TrainingCriteria(
-                    LocalDateTime.now().minusDays(7),   // from
-                    LocalDateTime.now().plusDays(1),    // to
-                    "Cardio",                           // trainingType
-                    "%jane doe%"                        // other party name like
+                    LocalDateTime.now().minusDays(7),
+                    LocalDateTime.now().plusDays(1),
+                    "Cardio",
+                    "%jane doe%"
             );
-            var traineeTrainings = trainingService.listForTrainee(traineeCreds, traineeUsername, crit);
-            System.out.println("Trainee view - trainings found: " + traineeTrainings.size());
-
-            // List trainers not assigned to this trainee
-            var notAssigned = trainerService.listNotAssignedToTrainee(trainerCreds, traineeUsername);
-            System.out.println("Trainers NOT assigned to " + traineeUsername + ": " + notAssigned.size());
-
-            // Change password (trainee), then deactivate and reactivate
-            traineeService.changePassword(traineeCreds, traineePassword);
-            traineeService.deactivate(traineeCreds);
-            traineeService.activate(traineeCreds);
+            var traineeTrainings =
+                    trainingService.listForTrainee(traineeCreds, traineeCreds.getUsername(), crit);
+            System.out.println("Trainee trainings found: " + traineeTrainings.size());
 
             System.out.println("Demo flow completed OK.");
+        } finally {
+            ctx.close(); // close ONLY after all DAO calls are done
         }
     }
 }

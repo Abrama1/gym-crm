@@ -18,11 +18,13 @@ public class JpaTrainingDao implements TrainingDao {
     private EntityManager em;
 
     @Override
+    @Transactional(readOnly = true)
     public Optional<Training> findById(Long id) {
         return Optional.ofNullable(em.find(Training.class, id));
     }
 
     @Override
+    @Transactional(readOnly = true)
     public Collection<Training> findAll() {
         return em.createQuery("select t from Training t", Training.class).getResultList();
     }
@@ -35,52 +37,58 @@ public class JpaTrainingDao implements TrainingDao {
     }
 
     @Override
-    public Collection<Training> listForTrainee(String traineeUsername, LocalDateTime from, LocalDateTime to,
+    @Transactional(readOnly = true)
+    public Collection<Training> listForTrainee(String traineeUsername,
+                                               LocalDateTime from, LocalDateTime to,
                                                String trainerNameLike, String trainingType) {
-        var q = em.createQuery("""
-            select tr from Training tr
-              join tr.trainee tt
-              join tt.user tu
-              join tr.trainer trn
-              join trn.user tru
-              join tr.trainingType ttype
-             where lower(tu.username) = lower(:u)
-               and (:from is null or tr.trainingDate >= :from)
-               and (:to   is null or tr.trainingDate <  :to)
-               and (:type is null or ttype.name = :type)
-               and (:tname is null or lower(concat(tru.firstName,' ',tru.lastName)) like :tname)
-             order by tr.trainingDate desc
-            """, Training.class);
+        StringBuilder jpql = new StringBuilder(
+                "select tr from Training tr " +
+                        " join tr.trainee tt join tt.user tu " +
+                        " join tr.trainer trn join trn.user tru " +
+                        " join tr.trainingType ttype " +
+                        " where lower(tu.username) = lower(:u)"
+        );
+        if (from != null)        jpql.append(" and tr.trainingDate >= :from");
+        if (to != null)          jpql.append(" and tr.trainingDate < :to");
+        if (trainingType != null)jpql.append(" and ttype.name = :type");
+        if (trainerNameLike != null)
+            jpql.append(" and lower(concat(tru.firstName,' ',tru.lastName)) like :tname");
+        jpql.append(" order by tr.trainingDate desc");
+
+        var q = em.createQuery(jpql.toString(), Training.class);
         q.setParameter("u", traineeUsername);
-        q.setParameter("from", from);
-        q.setParameter("to", to);
-        q.setParameter("type", trainingType);
-        q.setParameter("tname", trainerNameLike);
+        if (from != null)         q.setParameter("from", from);
+        if (to != null)           q.setParameter("to", to);
+        if (trainingType != null) q.setParameter("type", trainingType);
+        if (trainerNameLike != null) q.setParameter("tname", trainerNameLike);
         return q.getResultList();
     }
 
     @Override
-    public Collection<Training> listForTrainer(String trainerUsername, LocalDateTime from, LocalDateTime to,
+    @Transactional(readOnly = true)
+    public Collection<Training> listForTrainer(String trainerUsername,
+                                               LocalDateTime from, LocalDateTime to,
                                                String traineeNameLike, String trainingType) {
-        var q = em.createQuery("""
-            select tr from Training tr
-              join tr.trainer trn
-              join trn.user tru
-              join tr.trainee tt
-              join tt.user tu
-              join tr.trainingType ttype
-             where lower(tru.username) = lower(:u)
-               and (:from is null or tr.trainingDate >= :from)
-               and (:to   is null or tr.trainingDate <  :to)
-               and (:type is null or ttype.name = :type)
-               and (:tname is null or lower(concat(tu.firstName,' ',tu.lastName)) like :tname)
-             order by tr.trainingDate desc
-            """, Training.class);
+        StringBuilder jpql = new StringBuilder(
+                "select tr from Training tr " +
+                        " join tr.trainer trn join trn.user tru " +
+                        " join tr.trainee tt join tt.user tu " +
+                        " join tr.trainingType ttype " +
+                        " where lower(tru.username) = lower(:u)"
+        );
+        if (from != null)         jpql.append(" and tr.trainingDate >= :from");
+        if (to != null)           jpql.append(" and tr.trainingDate < :to");
+        if (trainingType != null) jpql.append(" and ttype.name = :type");
+        if (traineeNameLike != null)
+            jpql.append(" and lower(concat(tu.firstName,' ',tu.lastName)) like :tname");
+        jpql.append(" order by tr.trainingDate desc");
+
+        var q = em.createQuery(jpql.toString(), Training.class);
         q.setParameter("u", trainerUsername);
-        q.setParameter("from", from);
-        q.setParameter("to", to);
-        q.setParameter("type", trainingType);
-        q.setParameter("tname", traineeNameLike);
+        if (from != null)          q.setParameter("from", from);
+        if (to != null)            q.setParameter("to", to);
+        if (trainingType != null)  q.setParameter("type", trainingType);
+        if (traineeNameLike != null) q.setParameter("tname", traineeNameLike);
         return q.getResultList();
     }
 }

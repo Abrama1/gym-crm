@@ -4,7 +4,6 @@ import com.example.gymcrm.dao.TrainingTypeDao;
 import com.example.gymcrm.entity.TrainingType;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.PersistenceContext;
-import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Repository;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -18,15 +17,18 @@ public class JpaTrainingTypeDao implements TrainingTypeDao {
     private EntityManager em;
 
     @Override
+    @Transactional(readOnly = true)
     public Optional<TrainingType> findByName(String name) {
-        return em.createQuery(
+        var list = em.createQuery(
                         "select t from TrainingType t where t.name = :n", TrainingType.class)
                 .setParameter("n", name)
-                .getResultStream()
-                .findFirst();
+                .setMaxResults(1)
+                .getResultList();
+        return list.stream().findFirst();
     }
 
     @Override
+    @Transactional(readOnly = true)
     public Collection<TrainingType> findAll() {
         return em.createQuery("select t from TrainingType t", TrainingType.class).getResultList();
     }
@@ -34,10 +36,7 @@ public class JpaTrainingTypeDao implements TrainingTypeDao {
     @Override
     @Transactional
     public TrainingType save(TrainingType t) {
-        if (t.getId() == null) {
-            em.persist(t);
-            return t;
-        }
+        if (t.getId() == null) { em.persist(t); return t; }
         return em.merge(t);
     }
 }
