@@ -39,11 +39,7 @@ public class AuthServiceImpl implements AuthService {
         if (!safeEquals(user.getPassword(), credentials.getPassword()))
             throw fail("Password mismatch");
 
-        // We don’t have DAO findByUserId in the interface; to keep the surface stable,
-        // we scan the list. With JPA this becomes a single query internally.
-        return traineeDao.findAll().stream()
-                .filter(t -> t.getUser() != null && t.getUser().getId().equals(user.getId()))
-                .findFirst()
+        return traineeDao.findByUserId(user.getId())
                 .orElseThrow(() -> fail("Trainee profile not found for user"));
     }
 
@@ -56,9 +52,7 @@ public class AuthServiceImpl implements AuthService {
         if (!safeEquals(user.getPassword(), credentials.getPassword()))
             throw fail("Password mismatch");
 
-        return trainerDao.findAll().stream()
-                .filter(t -> t.getUser() != null && t.getUser().getId().equals(user.getId()))
-                .findFirst()
+        return trainerDao.findByUserId(user.getId())
                 .orElseThrow(() -> fail("Trainer profile not found for user"));
     }
 
@@ -69,7 +63,6 @@ public class AuthServiceImpl implements AuthService {
 
     private boolean safeEquals(String a, String b) {
         if (a == null || b == null) return false;
-        // basic constant-time-ish compare for demo purposes
         if (a.length() != b.length()) return false;
         int r = 0;
         for (int i = 0; i < a.length(); i++) r |= a.charAt(i) ^ b.charAt(i);
