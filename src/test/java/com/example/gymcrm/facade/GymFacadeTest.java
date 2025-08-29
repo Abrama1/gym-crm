@@ -1,13 +1,12 @@
 package com.example.gymcrm.facade;
 
-import com.example.gymcrm.domain.*;
+import com.example.gymcrm.entity.*;
 import com.example.gymcrm.service.*;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.*;
 
 import static org.junit.jupiter.api.Assertions.assertSame;
-import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
 
 class GymFacadeTest {
@@ -16,42 +15,30 @@ class GymFacadeTest {
     @Mock TrainerService trainerService;
     @Mock TrainingService trainingService;
 
-    private GymFacade facade;
+    GymFacade facade;
 
     @BeforeEach
-    void setup(){
+    void setup() {
         MockitoAnnotations.openMocks(this);
         facade = new GymFacade(traineeService, trainerService, trainingService);
     }
 
     @Test
-    void createTraineeProfile_delegates() {
-        Trainee input = new Trainee();
-        Trainee out = new Trainee(); out.setId(1L);
-        when(traineeService.create(any(), any(), any(), anyBoolean())).thenReturn(out);
+    void delegates_to_services() {
+        Trainee trn = new Trainee(); Trainee trnSaved = new Trainee();
+        when(traineeService.create(trn, "John","Smith", true)).thenReturn(trnSaved);
+        assertSame(trnSaved, facade.createTraineeProfile(trn, "John","Smith", true));
 
-        Trainee res = facade.createTraineeProfile(input, "A","B", true);
-        assertSame(out, res);
-        verify(traineeService).create(input, "A","B", true);
-    }
+        Trainer r = new Trainer(); Trainer rSaved = new Trainer();
+        when(trainerService.create(r, "Jane","Doe", true)).thenReturn(rSaved);
+        assertSame(rSaved, facade.createTrainerProfile(r, "Jane","Doe", true));
 
-    @Test
-    void createTrainerProfile_delegates() {
-        Trainer in = new Trainer(); Trainer out = new Trainer();
-        when(trainerService.create(any(), any(), any(), anyBoolean())).thenReturn(out);
+        Training t = new Training(); Training tSaved = new Training();
+        when(trainingService.create(t)).thenReturn(tSaved);
+        assertSame(tSaved, facade.createTraining(t));
 
-        Trainer res = facade.createTrainerProfile(in, "X","Y", true);
-        assertSame(out, res);
-        verify(trainerService).create(in, "X","Y", true);
-    }
-
-    @Test
-    void createTraining_delegates() {
-        Training in = new Training(); Training out = new Training();
-        when(trainingService.create(any())).thenReturn(out);
-
-        Training res = facade.createTraining(in);
-        assertSame(out, res);
-        verify(trainingService).create(in);
+        verify(traineeService).create(trn, "John","Smith", true);
+        verify(trainerService).create(r, "Jane","Doe", true);
+        verify(trainingService).create(t);
     }
 }

@@ -1,7 +1,7 @@
 package com.example.gymcrm.util;
 
 import com.example.gymcrm.dao.UserDao;
-import com.example.gymcrm.domain.User;
+import com.example.gymcrm.entity.User;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.*;

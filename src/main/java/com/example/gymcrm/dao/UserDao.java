@@ -1,6 +1,6 @@
 package com.example.gymcrm.dao;
 
-import com.example.gymcrm.domain.User;
+import com.example.gymcrm.entity.User;
 import java.util.Collection;
 import java.util.Optional;
 
