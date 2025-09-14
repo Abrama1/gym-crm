@@ -1,10 +1,13 @@
+// src/main/java/com/example/gymcrm/server/RestServer.java
 package com.example.gymcrm.server;
 
 import com.example.gymcrm.config.AppConfig;
 import com.example.gymcrm.web.WebConfig;
-import jakarta.servlet.ServletException;
+import com.example.gymcrm.web.filter.TransactionIdFilter;
 import org.apache.catalina.Context;
 import org.apache.catalina.startup.Tomcat;
+import org.apache.tomcat.util.descriptor.web.FilterDef;
+import org.apache.tomcat.util.descriptor.web.FilterMap;
 import org.springframework.web.context.support.AnnotationConfigWebApplicationContext;
 import org.springframework.web.servlet.DispatcherServlet;
 
@@ -18,21 +21,32 @@ public class RestServer {
         Tomcat tomcat = new Tomcat();
         tomcat.setPort(port);
 
-        // Minimal context; docBase must exist
         File base = new File(".");
         Context ctx = tomcat.addContext("", base.getAbsolutePath());
 
-        // Spring application context (register Web + App configs)
+        // --- Register txId filter via Tomcat API (must be before start) ---
+        FilterDef txDef = new FilterDef();
+        txDef.setFilterName("transactionIdFilter");
+        txDef.setFilterClass(TransactionIdFilter.class.getName()); // needs no-arg ctor
+        ctx.addFilterDef(txDef);
+
+        FilterMap txMap = new FilterMap();
+        txMap.setFilterName("transactionIdFilter");
+        txMap.addURLPattern("/*");
+        ctx.addFilterMap(txMap);
+        // -------------------------------------------------------------------
+
+        // Spring WebApplicationContext
         AnnotationConfigWebApplicationContext appCtx = new AnnotationConfigWebApplicationContext();
         appCtx.register(AppConfig.class, WebConfig.class);
 
-        // Dispatcher servlet
+        // DispatcherServlet
         DispatcherServlet dispatcher = new DispatcherServlet(appCtx);
+
         var servlet = Tomcat.addServlet(ctx, "dispatcher", dispatcher);
         servlet.setLoadOnStartup(1);
         ctx.addServletMappingDecoded("/", "dispatcher");
 
-        // Start
         tomcat.start();
         System.out.println("REST server started on http://localhost:" + port);
         tomcat.getServer().await();
