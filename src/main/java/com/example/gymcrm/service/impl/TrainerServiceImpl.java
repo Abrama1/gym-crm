@@ -94,9 +94,24 @@ public class TrainerServiceImpl implements TrainerService {
     @Override
     public Trainer updateProfile(Credentials auth, Trainer updates) {
         var me = authService.authenticateTrainer(auth);
-        me.setSpecialization(updates.getSpecialization());
+
+        // specialization is READ-ONLY per REST spec -> ignore updates.getSpecialization()
+
+        if (updates != null && updates.getUser() != null) {
+            User src = updates.getUser();
+            User dst = me.getUser();
+
+            if (src.getFirstName() != null) dst.setFirstName(src.getFirstName());
+            if (src.getLastName()  != null) dst.setLastName(src.getLastName());
+            // required in DTO; still null-check for safety
+            if (src.isActive() != dst.isActive()) dst.setActive(src.isActive());
+
+            userDao.save(dst);
+        }
+
+        // persist trainer (even though only user changed, safe to save both)
         Trainer saved = trainerDao.save(me);
-        log.info("Trainer {} updated profile", me.getUser().getUsername());
+        log.info("Trainer {} updated profile (name/active)", me.getUser().getUsername());
         return saved;
     }
 
