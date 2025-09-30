@@ -1,20 +1,20 @@
-server:
-  port: 8080
-
 spring:
-  datasource:
-    url: ${DB_URL:jdbc:postgresql://localhost:5432/gymcrm}
-    username: ${DB_USERNAME:postgres}
-    password: ${DB_PASSWORD:A2b0r0a0m6a!}
-    driver-class-name: org.postgresql.Driver
+  application:
+    name: gym-crm
+  profiles:
+    active: local
   jpa:
-    hibernate:
-      ddl-auto: update
-    show-sql: false
+    open-in-view: false
     properties:
       hibernate:
         format_sql: true
+        jdbc.time_zone: UTC
+server:
+  port: 8080
 
 logging:
+  pattern:
+    level: "%5p [tx:%X{txId}]"
   level:
-    com.example.gymcrm: INFO
+    org.hibernate.SQL: info
+    org.springframework.web: info

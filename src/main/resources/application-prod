@@ -1,0 +1,11 @@
+spring:
+  datasource:
+    url: ${jdbc:postgresql://localhost:5432/gymcrm}
+    username: ${postgres}
+    password: ${A2b0r0a0m6a!}
+    driver-class-name: org.postgresql.Driver
+    hikari:
+      maximum-pool-size: 20
+  jpa:
+    hibernate:
+      ddl-auto: validate
