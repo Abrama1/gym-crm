@@ -7,8 +7,10 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import jakarta.servlet.http.HttpSession;
 import org.slf4j.MDC;
+import org.springframework.stereotype.Component;
 import org.springframework.web.servlet.HandlerInterceptor;
 
+@Component
 public class AuthInterceptor implements HandlerInterceptor {
     public static final String SESSION_USER = "AUTH_USER";
     private final AuthService authService;
@@ -19,13 +21,11 @@ public class AuthInterceptor implements HandlerInterceptor {
 
     @Override
     public boolean preHandle(HttpServletRequest req, HttpServletResponse res, Object handler) {
-        // 1) Already authenticated in the session?
         HttpSession session = req.getSession(false);
         if (session != null && session.getAttribute(SESSION_USER) != null) {
             return true;
         }
 
-        // 2) Try header-based auth, create a lightweight session if ok
         String u = req.getHeader("X-Username");
         String p = req.getHeader("X-Password");
         if (u != null && p != null) {
@@ -53,6 +53,5 @@ public class AuthInterceptor implements HandlerInterceptor {
         }
 
         return true;
-
     }
 }
