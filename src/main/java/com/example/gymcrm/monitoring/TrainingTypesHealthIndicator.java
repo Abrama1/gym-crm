@@ -2,26 +2,40 @@ package com.example.gymcrm.monitoring;
 
 import org.springframework.boot.actuate.health.Health;
 import org.springframework.boot.actuate.health.HealthIndicator;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
 
-import jakarta.persistence.EntityManager;
-import jakarta.persistence.PersistenceContext;
+import javax.sql.DataSource;
 
 @Component("trainingTypes")
+@ConditionalOnBean(DataSource.class)
 public class TrainingTypesHealthIndicator implements HealthIndicator {
 
-    @PersistenceContext
-    private EntityManager em;
+    private final JdbcTemplate jdbc;
+
+    public TrainingTypesHealthIndicator(JdbcTemplate jdbc) {
+        this.jdbc = jdbc;
+    }
 
     @Override
     public Health health() {
-        Long cnt = em.createQuery("select count(t) from TrainingType t", Long.class)
-                .getSingleResult();
-        if (cnt != null && cnt > 0) {
-            return Health.up().withDetail("count", cnt).build();
+        try {
+            Integer cnt = jdbc.queryForObject("select count(1) from training_type", Integer.class);
+            if (cnt != null && cnt > 0) {
+                return Health.up()
+                        .withDetail("table", "training_type")
+                        .withDetail("count", cnt)
+                        .build();
+            }
+            return Health.outOfService()
+                    .withDetail("table", "training_type")
+                    .withDetail("reason", "No training types present")
+                    .build();
+        } catch (Exception e) {
+            return Health.down(e)
+                    .withDetail("table", "training_type")
+                    .build();
         }
-        return Health.status("OUT_OF_SERVICE")
-                .withDetail("reason", "No training types configured")
-                .build();
     }
 }
