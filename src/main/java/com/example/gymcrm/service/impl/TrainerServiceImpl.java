@@ -10,6 +10,7 @@ import com.example.gymcrm.service.AuthService;
 import com.example.gymcrm.service.TrainerService;
 import com.example.gymcrm.util.PasswordGenerator;
 import com.example.gymcrm.util.UsernameGenerator;
+import io.micrometer.core.instrument.MeterRegistry;
 import org.slf4j.Logger; import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -26,15 +27,20 @@ public class TrainerServiceImpl implements TrainerService {
     private final UsernameGenerator usernameGenerator;
     private final PasswordGenerator passwordGenerator;
     private final AuthService authService;
+    private final MeterRegistry meter;
 
-    public TrainerServiceImpl(TrainerDao trainerDao, UserDao userDao,
-                              UsernameGenerator usernameGenerator, PasswordGenerator passwordGenerator,
-                              AuthService authService) {
+    public TrainerServiceImpl(TrainerDao trainerDao,
+                              UserDao userDao,
+                              UsernameGenerator usernameGenerator,
+                              PasswordGenerator passwordGenerator,
+                              AuthService authService,
+                              MeterRegistry meter) {
         this.trainerDao = trainerDao;
         this.userDao = userDao;
         this.usernameGenerator = usernameGenerator;
         this.passwordGenerator = passwordGenerator;
         this.authService = authService;
+        this.meter = meter;
     }
 
     @Override
@@ -52,6 +58,11 @@ public class TrainerServiceImpl implements TrainerService {
 
         trainer.setUser(user);
         Trainer saved = trainerDao.save(trainer);
+
+        // metrics
+        meter.counter("gym_registrations_total", "role", "trainer").increment();
+        if (active) meter.counter("gym_profile_activations_total", "role", "trainer", "action", "activate").increment();
+
         log.info("Created trainer id={} username={}", saved.getId(), username);
         return saved;
     }
@@ -103,13 +114,11 @@ public class TrainerServiceImpl implements TrainerService {
 
             if (src.getFirstName() != null) dst.setFirstName(src.getFirstName());
             if (src.getLastName()  != null) dst.setLastName(src.getLastName());
-            // required in DTO; still null-check for safety
             if (src.isActive() != dst.isActive()) dst.setActive(src.isActive());
 
             userDao.save(dst);
         }
 
-        // persist trainer (even though only user changed, safe to save both)
         Trainer saved = trainerDao.save(me);
         log.info("Trainer {} updated profile (name/active)", me.getUser().getUsername());
         return saved;
@@ -121,6 +130,7 @@ public class TrainerServiceImpl implements TrainerService {
         User u = me.getUser();
         if (u.isActive()) throw new AlreadyActiveException("Trainer already active");
         u.setActive(true); userDao.save(u);
+        meter.counter("gym_profile_activations_total", "role", "trainer", "action", "activate").increment();
         log.info("Trainer {} activated", u.getUsername());
     }
 
@@ -130,12 +140,12 @@ public class TrainerServiceImpl implements TrainerService {
         User u = me.getUser();
         if (!u.isActive()) throw new AlreadyDeactivatedException("Trainer already deactivated");
         u.setActive(false); userDao.save(u);
+        meter.counter("gym_profile_activations_total", "role", "trainer", "action", "deactivate").increment();
         log.info("Trainer {} deactivated", u.getUsername());
     }
 
     @Override @Transactional(readOnly = true)
     public List<Trainer> listNotAssignedToTrainee(Credentials auth, String traineeUsername) {
-        // require any authenticated trainer to view this
         authService.authenticateTrainer(auth);
         return new ArrayList<>(trainerDao.listNotAssignedToTrainee(traineeUsername));
     }

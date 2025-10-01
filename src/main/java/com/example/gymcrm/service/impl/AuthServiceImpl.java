@@ -9,6 +9,7 @@ import com.example.gymcrm.entity.Trainer;
 import com.example.gymcrm.entity.User;
 import com.example.gymcrm.exceptions.AuthFailedException;
 import com.example.gymcrm.service.AuthService;
+import io.micrometer.core.instrument.MeterRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -23,37 +24,76 @@ public class AuthServiceImpl implements AuthService {
     private final UserDao userDao;
     private final TraineeDao traineeDao;
     private final TrainerDao trainerDao;
+    private final MeterRegistry meter;
 
-    public AuthServiceImpl(UserDao userDao, TraineeDao traineeDao, TrainerDao trainerDao) {
+    public AuthServiceImpl(UserDao userDao,
+                           TraineeDao traineeDao,
+                           TrainerDao trainerDao,
+                           MeterRegistry meter) {
         this.userDao = userDao;
         this.traineeDao = traineeDao;
         this.trainerDao = trainerDao;
+        this.meter = meter;
     }
 
     @Override
     public Trainee authenticateTrainee(Credentials credentials) {
         User user = userDao.findByUsername(credentials.getUsername())
-                .orElseThrow(() -> fail("Unknown username"));
-
-        if (!user.isActive()) throw fail("User is deactivated");
-        if (!safeEquals(user.getPassword(), credentials.getPassword()))
+                .orElse(null);
+        if (user == null) {
+            markAuth("trainee", false);
+            throw fail("Unknown username");
+        }
+        if (!user.isActive()) {
+            markAuth("trainee", false);
+            throw fail("User is deactivated");
+        }
+        if (!safeEquals(user.getPassword(), credentials.getPassword())) {
+            markAuth("trainee", false);
             throw fail("Password mismatch");
+        }
 
-        return traineeDao.findByUserId(user.getId())
-                .orElseThrow(() -> fail("Trainee profile not found for user"));
+        Trainee t = traineeDao.findByUserId(user.getId()).orElse(null);
+        if (t == null) {
+            markAuth("trainee", false);
+            throw fail("Trainee profile not found for user");
+        }
+
+        markAuth("trainee", true);
+        return t;
     }
 
     @Override
     public Trainer authenticateTrainer(Credentials credentials) {
         User user = userDao.findByUsername(credentials.getUsername())
-                .orElseThrow(() -> fail("Unknown username"));
-
-        if (!user.isActive()) throw fail("User is deactivated");
-        if (!safeEquals(user.getPassword(), credentials.getPassword()))
+                .orElse(null);
+        if (user == null) {
+            markAuth("trainer", false);
+            throw fail("Unknown username");
+        }
+        if (!user.isActive()) {
+            markAuth("trainer", false);
+            throw fail("User is deactivated");
+        }
+        if (!safeEquals(user.getPassword(), credentials.getPassword())) {
+            markAuth("trainer", false);
             throw fail("Password mismatch");
+        }
 
-        return trainerDao.findByUserId(user.getId())
-                .orElseThrow(() -> fail("Trainer profile not found for user"));
+        Trainer tr = trainerDao.findByUserId(user.getId()).orElse(null);
+        if (tr == null) {
+            markAuth("trainer", false);
+            throw fail("Trainer profile not found for user");
+        }
+
+        markAuth("trainer", true);
+        return tr;
+    }
+
+    private void markAuth(String role, boolean success) {
+        meter.counter("gym_auth_attempts_total",
+                "role", role,
+                "outcome", success ? "success" : "failure").increment();
     }
 
     private AuthFailedException fail(String msg) {

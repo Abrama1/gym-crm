@@ -1,34 +1,31 @@
-package com.example.gymcrm.web;
+package com.example.gymcrm.config;
 
-import com.example.gymcrm.service.AuthService;
 import com.example.gymcrm.web.auth.AuthInterceptor;
+import com.example.gymcrm.web.filter.TransactionIdFilter;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
+import org.springframework.boot.web.servlet.FilterRegistrationBean;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.core.Ordered;
 import org.springframework.http.converter.HttpMessageConverter;
 import org.springframework.http.converter.json.MappingJackson2HttpMessageConverter;
 import org.springframework.validation.Validator;
 import org.springframework.validation.beanvalidation.LocalValidatorFactoryBean;
-import org.springframework.web.servlet.config.annotation.EnableWebMvc;
 import org.springframework.web.servlet.config.annotation.InterceptorRegistry;
-import org.springframework.web.servlet.config.annotation.ResourceHandlerRegistry;
-import org.springframework.web.servlet.config.annotation.ViewControllerRegistry;
 import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 
 import java.util.List;
 
 @Configuration
-@EnableWebMvc
 public class WebConfig implements WebMvcConfigurer {
 
-    private final AuthService authService;
+    private final AuthInterceptor authInterceptor;
 
-    public WebConfig(AuthService authService) {
-        this.authService = authService;
+    public WebConfig(AuthInterceptor authInterceptor) {
+        this.authInterceptor = authInterceptor;
     }
 
-    // JSON (supports java.time.*)
     @Bean
     public MappingJackson2HttpMessageConverter jacksonConverter() {
         ObjectMapper mapper = new ObjectMapper();
@@ -41,36 +38,31 @@ public class WebConfig implements WebMvcConfigurer {
         converters.add(jacksonConverter());
     }
 
-    // Bean Validation
     @Bean
-    public LocalValidatorFactoryBean validator() {
-        return new LocalValidatorFactoryBean();
-    }
+    public LocalValidatorFactoryBean validator() { return new LocalValidatorFactoryBean(); }
 
     @Override
-    public Validator getValidator() {
-        return validator();
-    }
+    public Validator getValidator() { return validator(); }
 
     @Override
     public void addInterceptors(InterceptorRegistry registry) {
-        registry.addInterceptor(new AuthInterceptor(authService))
+        registry.addInterceptor(authInterceptor)
                 .addPathPatterns("/api/**")
                 .excludePathPatterns(
                         "/api/trainees/register",
                         "/api/trainers/register",
                         "/api/auth/**",
-                        "/swagger-ui/**", "/v3/**"
+                        "/swagger-ui/**", "/v3/**",
+                        "/actuator/**"
                 );
     }
 
-    @Override
-    public void addResourceHandlers(ResourceHandlerRegistry registry) {
-        // no static resources
-    }
-
-    @Override
-    public void addViewControllers(ViewControllerRegistry registry) {
-        // pure REST
+    @Bean
+    public FilterRegistrationBean<TransactionIdFilter> transactionIdFilter() {
+        FilterRegistrationBean<TransactionIdFilter> reg = new FilterRegistrationBean<>();
+        reg.setFilter(new TransactionIdFilter());
+        reg.addUrlPatterns("/*");
+        reg.setOrder(Ordered.HIGHEST_PRECEDENCE);
+        return reg;
     }
 }

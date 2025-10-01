@@ -1,0 +1,41 @@
+spring:
+  application:
+    name: gym-crm
+  profiles:
+    active: local
+  jpa:
+    open-in-view: false
+    properties:
+      hibernate:
+        format_sql: true
+        jdbc.time_zone: UTC
+
+server:
+  port: 8080
+
+logging:
+  pattern:
+    level: "%5p [tx:%X{txId}]"
+  level:
+    org.hibernate.SQL: info
+    org.springframework.web: info
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+  endpoint:
+    health:
+      show-details: when_authorized
+      probes:
+        enabled: true
+      group:
+        readiness:
+          include:
+            - db
+            - users
+            - trainingTypes
+  metrics:
+    tags:
+      application: ${spring.application.name}

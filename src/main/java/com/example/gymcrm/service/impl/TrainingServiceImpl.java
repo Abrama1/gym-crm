@@ -7,6 +7,9 @@ import com.example.gymcrm.entity.*;
 import com.example.gymcrm.exceptions.NotFoundException;
 import com.example.gymcrm.service.AuthService;
 import com.example.gymcrm.service.TrainingService;
+import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.Timer;
 import org.slf4j.Logger; import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -24,23 +27,34 @@ public class TrainingServiceImpl implements TrainingService {
     private final TrainerDao trainerDao;
     private final AuthService authService;
 
-    public TrainingServiceImpl(TrainingDao trainingDao, TrainingTypeDao trainingTypeDao,
-                               TraineeDao traineeDao, TrainerDao trainerDao, AuthService authService) {
+    // metrics
+    private final Counter trainingCreatedCounter;
+    private final Timer listForTraineeTimer;
+    private final Timer listForTrainerTimer;
+
+    public TrainingServiceImpl(TrainingDao trainingDao,
+                               TrainingTypeDao trainingTypeDao,
+                               TraineeDao traineeDao,
+                               TrainerDao trainerDao,
+                               AuthService authService,
+                               MeterRegistry registry) {
         this.trainingDao = trainingDao;
         this.trainingTypeDao = trainingTypeDao;
         this.traineeDao = traineeDao;
         this.trainerDao = trainerDao;
         this.authService = authService;
+
+        this.trainingCreatedCounter = registry.counter("gymcrm.trainings.created");
+        this.listForTraineeTimer   = registry.timer("gymcrm.trainings.list", "side", "trainee");
+        this.listForTrainerTimer   = registry.timer("gymcrm.trainings.list", "side", "trainer");
     }
 
     @Override
     public Training create(Training training) {
-        // validate type exists by name
         String typeName = training.getTrainingType() != null ? training.getTrainingType().getName() : null;
         if (typeName == null || trainingTypeDao.findByName(typeName).isEmpty())
             throw new NotFoundException("Training type not found: " + typeName);
 
-        // ensure trainee & trainer are managed references
         if (training.getTrainee() == null || training.getTrainee().getId() == null)
             throw new NotFoundException("Trainee reference required");
         if (training.getTrainer() == null || training.getTrainer().getId() == null)
@@ -58,6 +72,7 @@ public class TrainingServiceImpl implements TrainingService {
         training.setTrainingType(ttype);
 
         Training saved = trainingDao.save(training);
+        trainingCreatedCounter.increment();
         log.info("Created training id={} name={}", saved.getId(), saved.getTrainingName());
         return saved;
     }
@@ -68,8 +83,6 @@ public class TrainingServiceImpl implements TrainingService {
     @Override @Transactional(readOnly = true)
     public List<Training> list(){ return new ArrayList<>(trainingDao.findAll()); }
 
-    // criteria views (auth: user can only view their own trainings)
-
     @Override @Transactional(readOnly = true)
     public List<Training> listForTrainee(Credentials auth, String traineeUsername, TrainingCriteria c) {
         var me = authService.authenticateTrainee(auth);
@@ -77,11 +90,12 @@ public class TrainingServiceImpl implements TrainingService {
             throw new com.example.gymcrm.exceptions.AuthFailedException("Access denied to other trainee trainings");
 
         String nameLike = (c.getOtherPartyNameLike() == null) ? null : c.getOtherPartyNameLike().toLowerCase();
-        return new ArrayList<>(trainingDao.listForTrainee(
-                traineeUsername,
-                c.getFrom(), c.getTo(),
-                nameLike, c.getTrainingType()
-        ));
+
+        return listForTraineeTimer.record(() ->
+                new ArrayList<>(trainingDao.listForTrainee(
+                        traineeUsername, c.getFrom(), c.getTo(), nameLike, c.getTrainingType()
+                ))
+        );
     }
 
     @Override @Transactional(readOnly = true)
@@ -91,10 +105,11 @@ public class TrainingServiceImpl implements TrainingService {
             throw new com.example.gymcrm.exceptions.AuthFailedException("Access denied to other trainer trainings");
 
         String nameLike = (c.getOtherPartyNameLike() == null) ? null : c.getOtherPartyNameLike().toLowerCase();
-        return new ArrayList<>(trainingDao.listForTrainer(
-                trainerUsername,
-                c.getFrom(), c.getTo(),
-                nameLike, c.getTrainingType()
-        ));
+
+        return listForTrainerTimer.record(() ->
+                new ArrayList<>(trainingDao.listForTrainer(
+                        trainerUsername, c.getFrom(), c.getTo(), nameLike, c.getTrainingType()
+                ))
+        );
     }
 }

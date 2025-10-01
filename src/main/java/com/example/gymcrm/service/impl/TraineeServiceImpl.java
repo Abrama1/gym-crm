@@ -12,6 +12,7 @@ import com.example.gymcrm.service.AuthService;
 import com.example.gymcrm.service.TraineeService;
 import com.example.gymcrm.util.PasswordGenerator;
 import com.example.gymcrm.util.UsernameGenerator;
+import io.micrometer.core.instrument.MeterRegistry;
 import org.slf4j.Logger; import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -29,16 +30,22 @@ public class TraineeServiceImpl implements TraineeService {
     private final UsernameGenerator usernameGenerator;
     private final PasswordGenerator passwordGenerator;
     private final AuthService authService;
+    private final MeterRegistry meter;
 
-    public TraineeServiceImpl(TraineeDao traineeDao, TrainerDao trainerDao, UserDao userDao,
-                              UsernameGenerator usernameGenerator, PasswordGenerator passwordGenerator,
-                              AuthService authService) {
+    public TraineeServiceImpl(TraineeDao traineeDao,
+                              TrainerDao trainerDao,
+                              UserDao userDao,
+                              UsernameGenerator usernameGenerator,
+                              PasswordGenerator passwordGenerator,
+                              AuthService authService,
+                              MeterRegistry meter) {
         this.traineeDao = traineeDao;
         this.trainerDao = trainerDao;
         this.userDao = userDao;
         this.usernameGenerator = usernameGenerator;
         this.passwordGenerator = passwordGenerator;
         this.authService = authService;
+        this.meter = meter;
     }
 
     @Override
@@ -56,6 +63,11 @@ public class TraineeServiceImpl implements TraineeService {
 
         trainee.setUser(user);
         Trainee saved = traineeDao.save(trainee);
+
+        // metrics
+        meter.counter("gym_registrations_total", "role", "trainee").increment();
+        if (active) meter.counter("gym_profile_activations_total", "role", "trainee", "action", "activate").increment();
+
         log.info("Created trainee id={} username={}", saved.getId(), username);
         return saved;
     }
@@ -108,7 +120,6 @@ public class TraineeServiceImpl implements TraineeService {
     @Override
     public Trainee updateProfile(Credentials auth, Trainee updates) {
         var me = authService.authenticateTrainee(auth);
-        // Only allow editing own profile fields (address, dateOfBirth)
         me.setAddress(updates.getAddress());
         me.setDateOfBirth(updates.getDateOfBirth());
         Trainee saved = traineeDao.save(me);
@@ -122,6 +133,7 @@ public class TraineeServiceImpl implements TraineeService {
         User u = me.getUser();
         if (u.isActive()) throw new AlreadyActiveException("Trainee already active");
         u.setActive(true); userDao.save(u);
+        meter.counter("gym_profile_activations_total", "role", "trainee", "action", "activate").increment();
         log.info("Trainee {} activated", u.getUsername());
     }
 
@@ -131,6 +143,7 @@ public class TraineeServiceImpl implements TraineeService {
         User u = me.getUser();
         if (!u.isActive()) throw new AlreadyDeactivatedException("Trainee already deactivated");
         u.setActive(false); userDao.save(u);
+        meter.counter("gym_profile_activations_total", "role", "trainee", "action", "deactivate").increment();
         log.info("Trainee {} deactivated", u.getUsername());
     }
 
@@ -139,7 +152,6 @@ public class TraineeServiceImpl implements TraineeService {
         var me = authService.authenticateTrainee(auth);
         if (!me.getUser().getUsername().equalsIgnoreCase(username))
             throw new AuthFailedException("Cannot delete another trainee");
-        // cascades remove trainings
         Long userId = me.getUser().getId();
         traineeDao.delete(me);
         userDao.deleteById(userId);
@@ -152,7 +164,6 @@ public class TraineeServiceImpl implements TraineeService {
         if (!me.getUser().getUsername().equalsIgnoreCase(traineeUsername))
             throw new AuthFailedException("Cannot modify trainers for another trainee");
 
-        // replace the set
         var newSet = new HashSet<Trainer>();
         for (String tu : trainerUsernames) {
             var tr = trainerDao.findByUsername(tu)
