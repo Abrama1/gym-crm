@@ -5,14 +5,10 @@ import com.example.gymcrm.exceptions.AuthFailedException;
 import com.example.gymcrm.service.AuthService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
-import jakarta.servlet.http.HttpSession;
 import org.slf4j.MDC;
-import org.springframework.stereotype.Component;
 import org.springframework.web.servlet.HandlerInterceptor;
 
-@Component
 public class AuthInterceptor implements HandlerInterceptor {
-    public static final String SESSION_USER = "AUTH_USER";
     private final AuthService authService;
 
     public AuthInterceptor(AuthService authService) {
@@ -21,37 +17,32 @@ public class AuthInterceptor implements HandlerInterceptor {
 
     @Override
     public boolean preHandle(HttpServletRequest req, HttpServletResponse res, Object handler) {
-        HttpSession session = req.getSession(false);
-        if (session != null && session.getAttribute(SESSION_USER) != null) {
-            return true;
-        }
-
+        // Paths are excluded in WebConfig; if we are here, auth is required.
         String u = req.getHeader("X-Username");
         String p = req.getHeader("X-Password");
-        if (u != null && p != null) {
-            Credentials c = new Credentials();
-            c.setUsername(u);
-            c.setPassword(p);
-
-            boolean ok = false;
-            try {
-                authService.authenticateTrainee(c);
-                ok = true;
-            } catch (AuthFailedException ignore) {
-                try {
-                    authService.authenticateTrainer(c);
-                    ok = true;
-                } catch (AuthFailedException ignore2) { /* still false */ }
-            }
-
-            if (ok) {
-                HttpSession s = req.getSession(true);
-                s.setAttribute(SESSION_USER, u);
-                MDC.put("user", u);
-                return true;
-            }
+        if (u == null || p == null) {
+            res.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+            res.setHeader("WWW-Authenticate", "GymCRM realm=\"api\"");
+            return false;
         }
 
-        return true;
+        Credentials c = new Credentials();
+        c.setUsername(u);
+        c.setPassword(p);
+
+        try {
+            // Try trainee, then trainer
+            try {
+                authService.authenticateTrainee(c);
+            } catch (AuthFailedException ignore) {
+                authService.authenticateTrainer(c);
+            }
+            MDC.put("user", u);
+            return true;
+        } catch (AuthFailedException e) {
+            res.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+            res.setHeader("WWW-Authenticate", "GymCRM realm=\"api\"");
+            return false;
+        }
     }
 }
