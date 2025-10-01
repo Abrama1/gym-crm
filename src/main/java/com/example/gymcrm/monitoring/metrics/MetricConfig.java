@@ -1,4 +1,4 @@
-package com.example.gymcrm.monitoring;
+package com.example.gymcrm.monitoring.metrics;
 
 import io.micrometer.core.instrument.MeterRegistry;
 import jakarta.annotation.PostConstruct;

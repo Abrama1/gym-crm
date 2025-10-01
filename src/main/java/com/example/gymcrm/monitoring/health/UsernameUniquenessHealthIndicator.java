@@ -1,4 +1,4 @@
-package com.example.gymcrm.monitoring;
+package com.example.gymcrm.monitoring.health;
 
 import org.springframework.boot.actuate.health.Health;
 import org.springframework.boot.actuate.health.HealthIndicator;

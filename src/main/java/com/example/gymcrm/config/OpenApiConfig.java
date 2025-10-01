@@ -1,4 +1,4 @@
-package com.example.gymcrm.web;
+package com.example.gymcrm.config;
 
 import io.swagger.v3.oas.models.Components;
 import io.swagger.v3.oas.models.OpenAPI;

@@ -1,4 +1,4 @@
-package com.example.gymcrm.web;
+package com.example.gymcrm.config;
 
 import com.example.gymcrm.web.auth.AuthInterceptor;
 import com.example.gymcrm.web.filter.TransactionIdFilter;
