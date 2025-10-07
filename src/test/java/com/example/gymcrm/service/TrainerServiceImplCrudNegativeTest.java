@@ -5,37 +5,39 @@ import com.example.gymcrm.dao.UserDao;
 import com.example.gymcrm.entity.Trainer;
 import com.example.gymcrm.exceptions.NotFoundException;
 import com.example.gymcrm.service.impl.TrainerServiceImpl;
+import com.example.gymcrm.service.AuthService;
 import com.example.gymcrm.util.PasswordGenerator;
 import com.example.gymcrm.util.UsernameGenerator;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.mockito.*;
 
 import java.util.Optional;
 
-import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
 class TrainerServiceImplCrudNegativeTest {
-
-    @Mock TrainerDao trainerDao;
-    @Mock UserDao userDao;
-    @Mock UsernameGenerator usernameGen;
-    @Mock PasswordGenerator passwordGen;
-    @Mock AuthService authService;
-
-    TrainerService service;
+    private TrainerServiceImpl svc;
+    private TrainerDao trainerDao;
 
     @BeforeEach
-    void setup(){
-        MockitoAnnotations.openMocks(this);
-        service = new TrainerServiceImpl(trainerDao, userDao, usernameGen, passwordGen, authService);
+    void setUp() {
+        trainerDao = mock(TrainerDao.class);
+        svc = new TrainerServiceImpl(trainerDao, mock(UserDao.class),
+                mock(UsernameGenerator.class), mock(PasswordGenerator.class),
+                mock(AuthService.class), new SimpleMeterRegistry());
+    }
+
+    @Test
+    void update_missingId_throws() {
+        assertThrows(NotFoundException.class, () -> svc.update(new Trainer()));
     }
 
     @Test
     void update_notFound_throws() {
-        Trainer t = new Trainer(); t.setId(88L);
-        when(trainerDao.findById(88L)).thenReturn(Optional.empty());
-        assertThrows(NotFoundException.class, () -> service.update(t));
+        var t = new Trainer(); t.setId(9L);
+        when(trainerDao.findById(9L)).thenReturn(Optional.empty());
+        assertThrows(NotFoundException.class, () -> svc.update(t));
     }
 }
