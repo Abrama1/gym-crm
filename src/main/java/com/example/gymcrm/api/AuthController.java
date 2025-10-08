@@ -1,55 +1,74 @@
 package com.example.gymcrm.api;
 
-import com.example.gymcrm.dto.ChangePasswordRequest;
 import com.example.gymcrm.dto.Credentials;
+import com.example.gymcrm.entity.Trainee;
+import com.example.gymcrm.entity.Trainer;
 import com.example.gymcrm.exceptions.AuthFailedException;
+import com.example.gymcrm.security.BruteForceService;
+import com.example.gymcrm.security.JwtService;
+import com.example.gymcrm.security.TokenBlacklist;
 import com.example.gymcrm.service.AuthService;
-import com.example.gymcrm.service.TraineeService;
-import com.example.gymcrm.service.TrainerService;
-import io.swagger.annotations.Api;
-import io.swagger.annotations.ApiOperation;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.validation.Valid;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
-@Api(tags = "Auth")
+import java.util.Map;
+
 @RestController
 @RequestMapping("/api/auth")
 public class AuthController {
 
-    private final AuthService authService;
-    private final TrainerService trainerService;
-    private final TraineeService traineeService;
+    private final AuthService auth;
+    private final JwtService jwt;
+    private final BruteForceService brute;
+    private final TokenBlacklist blacklist;
 
-    public AuthController(AuthService authService,
-                          TrainerService trainerService,
-                          TraineeService traineeService) {
-        this.authService = authService;
-        this.trainerService = trainerService;
-        this.traineeService = traineeService;
+    public AuthController(AuthService auth, JwtService jwt,
+                          BruteForceService brute, TokenBlacklist blacklist) {
+        this.auth = auth;
+        this.jwt = jwt;
+        this.brute = brute;
+        this.blacklist = blacklist;
     }
 
-    @ApiOperation("Login (200 OK if credentials are valid)")
-    @GetMapping("/login")
-    public ResponseEntity<Void> login(@RequestParam String username,
-                                      @RequestParam String password) {
-        // try authenticate as trainer, if fails, try trainee
-        try {
-            authService.authenticateTrainer(new Credentials(username, password));
-        } catch (AuthFailedException e) {
-            authService.authenticateTrainee(new Credentials(username, password));
+    @PostMapping("/login")
+    public ResponseEntity<?> login(@RequestBody @Valid Credentials body) {
+        String u = body.getUsername();
+        if (brute.isLocked(u)) {
+            return ResponseEntity.status(423) // Locked
+                    .body(Map.of("error", "Account locked", "retryAfterSec", brute.getLockSeconds()));
         }
-        return ResponseEntity.ok().build();
+
+        try {
+            // Try trainee, then trainer
+            String role;
+            try {
+                Trainee t = auth.authenticateTrainee(body);
+                role = "trainee";
+            } catch (AuthFailedException ex) {
+                Trainer tr = auth.authenticateTrainer(body); // throws if bad
+                role = "trainer";
+            }
+
+            brute.reset(u);
+            String token = jwt.generate(u, role);
+            return ResponseEntity.ok(Map.of(
+                    "tokenType", "Bearer",
+                    "token", token
+            ));
+        } catch (AuthFailedException ex) {
+            brute.recordFailure(u);
+            return ResponseEntity.status(401).body(Map.of("error", "Invalid credentials"));
+        }
     }
 
-    @ApiOperation("Change password (works for either trainer or trainee)")
-    @PutMapping("/password")
-    public ResponseEntity<Void> changePassword(@RequestBody ChangePasswordRequest body) {
-        var creds = new Credentials(body.getUsername(), body.getOldPassword());
-        try {
-            trainerService.changePassword(creds, body.getNewPassword());
-        } catch (AuthFailedException e) {
-            traineeService.changePassword(creds, body.getNewPassword());
+    @PostMapping("/logout")
+    public ResponseEntity<?> logout(HttpServletRequest req) {
+        String h = req.getHeader("Authorization");
+        if (h != null && h.startsWith("Bearer ")) {
+            blacklist.revoke(h.substring(7));
         }
-        return ResponseEntity.ok().build();
+        return ResponseEntity.ok(Map.of("status", "ok"));
     }
 }
