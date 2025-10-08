@@ -66,7 +66,7 @@ public class AuthController {
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "User is deactivated");
         }
 
-        if (!encoder.matches(body.getPassword(), u.getPasswordHash())) {
+        if (!encoder.matches(body.getPassword(), u.getPassword())) {
             brute.recordFailure(username);
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Invalid credentials");
         }

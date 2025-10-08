@@ -6,7 +6,6 @@ import com.example.gymcrm.dto.AddTrainingRequest;
 import com.example.gymcrm.dto.Credentials;
 import com.example.gymcrm.dto.TrainingCriteria;
 import com.example.gymcrm.dto.TrainingItemResponse;
-import com.example.gymcrm.dto.TrainingsResponse;
 import com.example.gymcrm.entity.Trainee;
 import com.example.gymcrm.entity.Trainer;
 import com.example.gymcrm.entity.Training;
@@ -16,15 +15,16 @@ import com.example.gymcrm.service.TrainingService;
 import io.swagger.annotations.ApiOperation;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
-import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Locale;
 import java.util.stream.Collectors;
 
 @RestController
-@RequestMapping("/api/trainings")
+@RequestMapping("/api")
 public class TrainingController {
 
     private final TrainingService trainingService;
@@ -39,111 +39,135 @@ public class TrainingController {
         this.trainerDao = trainerDao;
     }
 
-    // ---- helpers
-
-    private Credentials creds(HttpServletRequest req) {
-        return new Credentials(
-                req.getHeader("X-Username"),
-                req.getHeader("X-Password"));
+    private static Credentials creds(HttpServletRequest req) {
+        return new Credentials(req.getHeader("X-Username"), req.getHeader("X-Password"));
     }
 
-    private TrainingItemResponse toDto(Training t, boolean forTraineeView) {
-        var dto = new TrainingItemResponse();
-        dto.setTrainingName(t.getTrainingName());
-        dto.setTrainingDate(t.getTrainingDate() != null ? t.getTrainingDate().toLocalDate() : null);
-        dto.setTrainingType(t.getTrainingType() != null ? t.getTrainingType().getName() : null);
-        dto.setTrainingDuration(t.getDurationMinutes());
-        if (forTraineeView) {
-            Trainer tr = t.getTrainer();
-            String name = (tr != null && tr.getUser() != null)
-                    ? tr.getUser().getFirstName() + " " + tr.getUser().getLastName()
-                    : null;
-            dto.setOtherPartyName(name);
-        } else {
-            Trainee trn = t.getTrainee();
-            String name = (trn != null && trn.getUser() != null)
-                    ? trn.getUser().getFirstName() + " " + trn.getUser().getLastName()
-                    : null;
-            dto.setOtherPartyName(name);
-        }
-        return dto;
-    }
+    // ---------- Add training ----------
 
-    private TrainingsResponse wrap(List<TrainingItemResponse> items) {
-        var res = new TrainingsResponse();
-        res.setItems(items);
+    @ApiOperation("Create a training")
+    @PostMapping("/trainings")
+    public TrainingItemResponse add(@RequestBody @Valid AddTrainingRequest body,
+                                    HttpServletRequest req) {
+        // Resolve trainee & trainer by username (controller-level)
+        Trainee trainee = traineeDao.findByUsername(body.getTraineeUsername())
+                .orElseThrow(() -> new NotFoundException("Trainee not found: " + body.getTraineeUsername()));
+        Trainer trainer = trainerDao.findByUsername(body.getTrainerUsername())
+                .orElseThrow(() -> new NotFoundException("Trainer not found: " + body.getTrainerUsername()));
+
+        // Build Training entity for service
+        Training t = new Training();
+        t.setTrainingName(body.getTrainingName());
+        t.setTrainingDate(body.getTrainingDate().atStartOfDay());
+        t.setDurationMinutes(body.getTrainingDuration());
+
+        Trainee tRef = new Trainee(); tRef.setId(trainee.getId());
+        Trainer rRef = new Trainer(); rRef.setId(trainer.getId());
+        t.setTrainee(tRef);
+        t.setTrainer(rRef);
+
+        TrainingType type = new TrainingType();
+        type.setName(body.getTrainingType());
+        t.setTrainingType(type);
+
+        Training saved = trainingService.create(t);
+
+        // Map to response from the “trainer/trainee” perspective isn’t defined,
+        // so return a neutral item with “otherPartyName” set to trainer’s name.
+        TrainingItemResponse res = new TrainingItemResponse();
+        res.setTrainingName(saved.getTrainingName());
+        res.setTrainingDate(saved.getTrainingDate().toLocalDate());
+        res.setTrainingDuration(saved.getDurationMinutes());
+        res.setTrainingType(saved.getTrainingType() != null ? saved.getTrainingType().getName() : null);
+        String trainerFull = fullName(trainer.getUser().getFirstName(), trainer.getUser().getLastName());
+        res.setOtherPartyName(trainerFull);
         return res;
     }
 
-    // ---- endpoints
+    // ---------- Lists for trainee/trainer ----------
 
-    @ApiOperation("Get trainee trainings list")
-    @GetMapping("/trainee/{username}")
-    public TrainingsResponse traineeTrainings(@PathVariable String username,
-                                              @RequestParam(required = false) LocalDate from,
-                                              @RequestParam(required = false) LocalDate to,
-                                              @RequestParam(name = "trainerName", required = false) String trainerName,
-                                              @RequestParam(name = "trainingType", required = false) String trainingType,
-                                              HttpServletRequest req) {
-        var c = new TrainingCriteria();
-        c.setFrom(from == null ? null : from.atStartOfDay());
-        c.setTo(to == null ? null : to.atTime(23, 59, 59));
-        c.setOtherPartyNameLike(trainerName);
-        c.setTrainingType(trainingType);
+    @ApiOperation("List trainings for a trainee (self)")
+    @GetMapping("/trainees/{username}/trainings")
+    public List<TrainingItemResponse> traineeTrainings(@PathVariable String username,
+                                                       @RequestParam(required = false) String from,
+                                                       @RequestParam(required = false) String to,
+                                                       @RequestParam(required = false, name = "trainingType") String type,
+                                                       @RequestParam(required = false, name = "nameLike") String otherPartyNameLike,
+                                                       HttpServletRequest req) {
 
-        var list = trainingService.listForTrainee(creds(req), username, c).stream()
-                .map(t -> toDto(t, true))
-                .collect(Collectors.toList());
-        return wrap(list);
+        TrainingCriteria c = new TrainingCriteria(
+                parseDateTime(from),
+                parseDateTime(to),
+                emptyToNull(type),
+                emptyToNull(otherPartyNameLike)
+        );
+
+        List<Training> list = trainingService.listForTrainee(creds(req), username, c);
+        return list.stream().map(tr -> {
+            TrainingItemResponse r = new TrainingItemResponse();
+            r.setTrainingName(tr.getTrainingName());
+            r.setTrainingDate(tr.getTrainingDate() != null ? tr.getTrainingDate().toLocalDate() : null);
+            r.setTrainingType(tr.getTrainingType() != null ? tr.getTrainingType().getName() : null);
+            r.setTrainingDuration(tr.getDurationMinutes());
+            String trainerFull = tr.getTrainer() != null && tr.getTrainer().getUser() != null
+                    ? fullName(tr.getTrainer().getUser().getFirstName(), tr.getTrainer().getUser().getLastName())
+                    : null;
+            r.setOtherPartyName(trainerFull);
+            return r;
+        }).collect(Collectors.toList());
     }
 
-    @ApiOperation("Get trainer trainings list")
-    @GetMapping("/trainer/{username}")
-    public TrainingsResponse trainerTrainings(@PathVariable String username,
-                                              @RequestParam(required = false) LocalDate from,
-                                              @RequestParam(required = false) LocalDate to,
-                                              @RequestParam(name = "traineeName", required = false) String traineeName,
-                                              HttpServletRequest req) {
-        var c = new TrainingCriteria();
-        c.setFrom(from == null ? null : from.atStartOfDay());
-        c.setTo(to == null ? null : to.atTime(23, 59, 59));
-        c.setOtherPartyNameLike(traineeName);
+    @ApiOperation("List trainings for a trainer (self)")
+    @GetMapping("/trainers/{username}/trainings")
+    public List<TrainingItemResponse> trainerTrainings(@PathVariable String username,
+                                                       @RequestParam(required = false) String from,
+                                                       @RequestParam(required = false) String to,
+                                                       @RequestParam(required = false, name = "trainingType") String type,
+                                                       @RequestParam(required = false, name = "nameLike") String otherPartyNameLike,
+                                                       HttpServletRequest req) {
 
-        var list = trainingService.listForTrainer(creds(req), username, c).stream()
-                .map(t -> toDto(t, false))
-                .collect(Collectors.toList());
-        return wrap(list);
+        TrainingCriteria c = new TrainingCriteria(
+                parseDateTime(from),
+                parseDateTime(to),
+                emptyToNull(type),
+                emptyToNull(otherPartyNameLike)
+        );
+
+        List<Training> list = trainingService.listForTrainer(creds(req), username, c);
+        return list.stream().map(tr -> {
+            TrainingItemResponse r = new TrainingItemResponse();
+            r.setTrainingName(tr.getTrainingName());
+            r.setTrainingDate(tr.getTrainingDate() != null ? tr.getTrainingDate().toLocalDate() : null);
+            r.setTrainingType(tr.getTrainingType() != null ? tr.getTrainingType().getName() : null);
+            r.setTrainingDuration(tr.getDurationMinutes());
+            String traineeFull = tr.getTrainee() != null && tr.getTrainee().getUser() != null
+                    ? fullName(tr.getTrainee().getUser().getFirstName(), tr.getTrainee().getUser().getLastName())
+                    : null;
+            r.setOtherPartyName(traineeFull);
+            return r;
+        }).collect(Collectors.toList());
     }
 
-    @ApiOperation("Add training")
-    @PostMapping
-    public ResponseEntity<Void> add(@RequestBody @Valid AddTrainingRequest body,
-                                    HttpServletRequest req) {
+    // ---------- helpers ----------
 
-        // resolve trainee/trainer by username to set IDs
-        var trainee = traineeDao.findByUsername(body.getTraineeUsername())
-                .orElseThrow(() -> new NotFoundException("Trainee not found: " + body.getTraineeUsername()));
-        var trainer = trainerDao.findByUsername(body.getTrainerUsername())
-                .orElseThrow(() -> new NotFoundException("Trainer not found: " + body.getTrainerUsername()));
+    private static LocalDateTime parseDateTime(String s) {
+        if (s == null || s.isBlank()) return null;
+        String t = s.trim();
+        if (t.contains("T")) {
+            return LocalDateTime.parse(t);
+        }
+        // Just a date -> start of day
+        LocalDate d = LocalDate.parse(t);
+        return d.atStartOfDay();
+    }
 
-        var training = new Training();
-        training.setTrainingName(body.getTrainingName());
-        training.setTrainingDate(body.getTrainingDate() != null ? body.getTrainingDate().atStartOfDay() : null);
-        training.setDurationMinutes(body.getTrainingDuration());
+    private static String emptyToNull(String s) {
+        return (s == null || s.isBlank()) ? null : s;
+    }
 
-        var tt = new TrainingType();
-        tt.setName(body.getTrainingType());
-        training.setTrainingType(tt);
-
-        var tnr = new Trainer();
-        tnr.setId(trainer.getId());
-        training.setTrainer(tnr);
-
-        var trn = new Trainee();
-        trn.setId(trainee.getId());
-        training.setTrainee(trn);
-
-        trainingService.create(training); // service validates type & references
-        return ResponseEntity.ok().build();
+    private static String fullName(String first, String last) {
+        String f = first == null ? "" : first.trim();
+        String l = last == null ? "" : last.trim();
+        return (f + " " + l).trim().replaceAll("\\s{2,}", " ");
     }
 }
