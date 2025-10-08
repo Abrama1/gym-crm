@@ -21,11 +21,11 @@ public class BruteForceService {
         this.lockDuration = Duration.ofMinutes(lockMinutes);
         this.attempts = Caffeine.newBuilder()
                 .expireAfterWrite(Duration.ofMinutes(15))
-                .maximumSize(10000)
+                .maximumSize(10_000)
                 .build();
         this.locks = Caffeine.newBuilder()
                 .expireAfterWrite(lockDuration)
-                .maximumSize(10000)
+                .maximumSize(10_000)
                 .build();
     }
 

@@ -24,8 +24,8 @@ public class User {
     private String username;
 
     // Stored as a hash (BCrypt).
-    @Column(name = "password", nullable = false)
-    private String password;
+    @Column(name = "password_hash", nullable = false)
+    private String passwordHash;
 
     @Column(name = "active", nullable = false)
     private boolean active;

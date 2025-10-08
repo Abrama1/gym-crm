@@ -31,7 +31,7 @@ public class JwtAuthFilter extends OncePerRequestFilter {
 
         String h = req.getHeader("Authorization");
         if (h != null && h.startsWith("Bearer ")) {
-            String token = h.substring(7);
+            String token = h.substring(7).trim();
 
             if (!blacklist.isRevoked(token)) {
                 try {
@@ -47,7 +47,8 @@ public class JwtAuthFilter extends OncePerRequestFilter {
                     auth.setAuthenticated(true);
                     SecurityContextHolder.getContext().setAuthentication(auth);
                 } catch (Exception ignore) {
-                    // invalid token -> no auth set; SecurityConfig will 401 on protected endpoints
+                    // invalid/expired token -> no auth; protected endpoints will 401 via entry point
+                    SecurityContextHolder.clearContext();
                 }
             }
         }

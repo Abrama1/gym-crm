@@ -10,8 +10,9 @@ import java.time.Duration;
 public class TokenBlacklist {
 
     private final Cache<String, Boolean> revoked = Caffeine.newBuilder()
-            .expireAfterWrite(Duration.ofHours(2)) // safety window
-            .maximumSize(10000)
+            // tokens are short-lived; keep a small safety window
+            .expireAfterWrite(Duration.ofHours(2))
+            .maximumSize(10_000)
             .build();
 
     public void revoke(String token) {
