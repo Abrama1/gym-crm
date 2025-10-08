@@ -1,45 +1,38 @@
 package com.example.gymcrm.service;
 
 import com.example.gymcrm.dao.TrainerDao;
-import com.example.gymcrm.dao.UserDao;
+import com.example.gymcrm.dto.Credentials;
 import com.example.gymcrm.entity.Trainer;
-import com.example.gymcrm.service.AuthService;
+import com.example.gymcrm.entity.User;
 import com.example.gymcrm.service.impl.TrainerServiceImpl;
-import com.example.gymcrm.util.PasswordGenerator;
-import com.example.gymcrm.util.UsernameGenerator;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.security.crypto.password.PasswordEncoder;
 
 import java.util.List;
+import java.util.Optional;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.Mockito.*;
 
 class TrainerServiceImplListNotAssignedPositiveTest {
-    private TrainerServiceImpl svc;
-    private TrainerDao trainerDao;
-    private AuthService auth;
-
-    @BeforeEach
-    void setUp() {
-        trainerDao = mock(TrainerDao.class);
-        auth = mock(AuthService.class);
-        svc = new TrainerServiceImpl(trainerDao, mock(UserDao.class),
-                mock(UsernameGenerator.class), mock(PasswordGenerator.class),
-                auth, new SimpleMeterRegistry());
-    }
 
     @Test
-    void listNotAssigned_authIsInvoked_andReturnsList() {
-        when(trainerDao.listNotAssignedToTrainee("trainee.1")).thenReturn(List.of(new Trainer()));
+    void lists_after_principal_check() {
+        var trainerDao = mock(TrainerDao.class);
+        var userDao = mock(com.example.gymcrm.dao.UserDao.class);
+        var encoder = mock(PasswordEncoder.class);
 
-        var out = svc.listNotAssignedToTrainee(creds("tr","pw"), "trainee.1");
-        assertEquals(1, out.size());
-        verify(auth).authenticateTrainer(any());
-    }
+        var svc = new TrainerServiceImpl(trainerDao, userDao, null, null, new SimpleMeterRegistry(), encoder);
 
-    private com.example.gymcrm.dto.Credentials creds(String u, String p) {
-        var c = new com.example.gymcrm.dto.Credentials(); c.setUsername(u); c.setPassword(p); return c;
+        var meU = new User(); meU.setUsername("t1");
+        var me = new Trainer(); me.setUser(meU);
+        when(trainerDao.findByUsername("t1")).thenReturn(Optional.of(me));
+        when(trainerDao.listNotAssignedToTrainee("trainee.1"))
+                .thenReturn(List.of(new Trainer(), new Trainer()));
+
+        var res = svc.listNotAssignedToTrainee(new Credentials("t1","x"), "trainee.1");
+        assertEquals(2, res.size());
+        verify(trainerDao).findByUsername("t1");
     }
 }

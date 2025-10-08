@@ -6,12 +6,12 @@ import com.example.gymcrm.dto.Credentials;
 import com.example.gymcrm.entity.Trainer;
 import com.example.gymcrm.entity.User;
 import com.example.gymcrm.exceptions.*;
-import com.example.gymcrm.service.AuthService;
 import com.example.gymcrm.service.TrainerService;
 import com.example.gymcrm.util.PasswordGenerator;
 import com.example.gymcrm.util.UsernameGenerator;
 import io.micrometer.core.instrument.MeterRegistry;
 import org.slf4j.Logger; import org.slf4j.LoggerFactory;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -26,42 +26,44 @@ public class TrainerServiceImpl implements TrainerService {
     private final UserDao userDao;
     private final UsernameGenerator usernameGenerator;
     private final PasswordGenerator passwordGenerator;
-    private final AuthService authService;
     private final MeterRegistry meter;
+    private final PasswordEncoder passwordEncoder;
 
     public TrainerServiceImpl(TrainerDao trainerDao,
                               UserDao userDao,
                               UsernameGenerator usernameGenerator,
                               PasswordGenerator passwordGenerator,
-                              AuthService authService,
-                              MeterRegistry meter) {
+                              MeterRegistry meter,
+                              PasswordEncoder passwordEncoder) {
         this.trainerDao = trainerDao;
         this.userDao = userDao;
         this.usernameGenerator = usernameGenerator;
         this.passwordGenerator = passwordGenerator;
-        this.authService = authService;
         this.meter = meter;
+        this.passwordEncoder = passwordEncoder;
     }
 
     @Override
     public Trainer create(Trainer trainer, String firstName, String lastName, boolean active) {
         String username = usernameGenerator.generateUnique(firstName, lastName);
-        String password = passwordGenerator.random10();
+        String rawPassword = passwordGenerator.random10();
 
         User user = new User();
         user.setFirstName(firstName);
         user.setLastName(lastName);
         user.setUsername(username);
-        user.setPassword(password);
+        user.setPlainPassword(rawPassword);               // returned once
+        user.setPassword(passwordEncoder.encode(rawPassword)); // stored as hash
         user.setActive(active);
         userDao.save(user);
 
         trainer.setUser(user);
         Trainer saved = trainerDao.save(trainer);
 
-        // metrics
         meter.counter("gym_registrations_total", "role", "trainer").increment();
-        if (active) meter.counter("gym_profile_activations_total", "role", "trainer", "action", "activate").increment();
+        if (active) {
+            meter.counter("gym_profile_activations_total", "role", "trainer", "action", "activate").increment();
+        }
 
         log.info("Created trainer id={} username={}", saved.getId(), username);
         return saved;
@@ -82,12 +84,12 @@ public class TrainerServiceImpl implements TrainerService {
     @Override @Transactional(readOnly = true)
     public List<Trainer> list(){ return new ArrayList<>(trainerDao.findAll()); }
 
-    // auth-gated
+    // ---- auth-gated (principal-based) ----
 
     @Override @Transactional(readOnly = true)
     public Trainer getByUsername(Credentials auth, String username) {
-        var me = authService.authenticateTrainer(auth);
-        if (!me.getUser().getUsername().equalsIgnoreCase(username))
+        String principal = auth.getUsername();
+        if (principal == null || !principal.equalsIgnoreCase(username))
             throw new AuthFailedException("Access denied to other trainer profile");
         return trainerDao.findByUsername(username)
                 .orElseThrow(() -> new NotFoundException("Trainer not found: " + username));
@@ -95,16 +97,20 @@ public class TrainerServiceImpl implements TrainerService {
 
     @Override
     public void changePassword(Credentials auth, String newPassword) {
-        var me = authService.authenticateTrainer(auth);
+        String principal = auth.getUsername();
+        Trainer me = trainerDao.findByUsername(principal)
+                .orElseThrow(() -> new NotFoundException("Trainer not found: " + principal));
         User u = me.getUser();
-        u.setPassword(newPassword);
+        u.setPassword(passwordEncoder.encode(newPassword));  // hash on change
         userDao.save(u);
         log.info("Trainer {} changed password", u.getUsername());
     }
 
     @Override
     public Trainer updateProfile(Credentials auth, Trainer updates) {
-        var me = authService.authenticateTrainer(auth);
+        String principal = auth.getUsername();
+        Trainer me = trainerDao.findByUsername(principal)
+                .orElseThrow(() -> new NotFoundException("Trainer not found: " + principal));
 
         // specialization is READ-ONLY per REST spec -> ignore updates.getSpecialization()
 
@@ -126,7 +132,9 @@ public class TrainerServiceImpl implements TrainerService {
 
     @Override
     public void activate(Credentials auth) {
-        var me = authService.authenticateTrainer(auth);
+        String principal = auth.getUsername();
+        Trainer me = trainerDao.findByUsername(principal)
+                .orElseThrow(() -> new NotFoundException("Trainer not found: " + principal));
         User u = me.getUser();
         if (u.isActive()) throw new AlreadyActiveException("Trainer already active");
         u.setActive(true); userDao.save(u);
@@ -136,7 +144,9 @@ public class TrainerServiceImpl implements TrainerService {
 
     @Override
     public void deactivate(Credentials auth) {
-        var me = authService.authenticateTrainer(auth);
+        String principal = auth.getUsername();
+        Trainer me = trainerDao.findByUsername(principal)
+                .orElseThrow(() -> new NotFoundException("Trainer not found: " + principal));
         User u = me.getUser();
         if (!u.isActive()) throw new AlreadyDeactivatedException("Trainer already deactivated");
         u.setActive(false); userDao.save(u);
@@ -146,7 +156,10 @@ public class TrainerServiceImpl implements TrainerService {
 
     @Override @Transactional(readOnly = true)
     public List<Trainer> listNotAssignedToTrainee(Credentials auth, String traineeUsername) {
-        authService.authenticateTrainer(auth);
+        // Any authenticated trainer can call this; verify principal exists as a trainer
+        String principal = auth.getUsername();
+        trainerDao.findByUsername(principal)
+                .orElseThrow(() -> new NotFoundException("Trainer not found: " + principal));
         return new ArrayList<>(trainerDao.listNotAssignedToTrainee(traineeUsername));
     }
 }

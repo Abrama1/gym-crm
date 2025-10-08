@@ -4,8 +4,8 @@ import com.example.gymcrm.dao.*;
 import com.example.gymcrm.dto.Credentials;
 import com.example.gymcrm.dto.TrainingCriteria;
 import com.example.gymcrm.entity.*;
+import com.example.gymcrm.exceptions.AuthFailedException;
 import com.example.gymcrm.exceptions.NotFoundException;
-import com.example.gymcrm.service.AuthService;
 import com.example.gymcrm.service.TrainingService;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
@@ -25,7 +25,6 @@ public class TrainingServiceImpl implements TrainingService {
     private final TrainingTypeDao trainingTypeDao;
     private final TraineeDao traineeDao;
     private final TrainerDao trainerDao;
-    private final AuthService authService;
 
     // metrics
     private final Counter trainingCreatedCounter;
@@ -36,13 +35,11 @@ public class TrainingServiceImpl implements TrainingService {
                                TrainingTypeDao trainingTypeDao,
                                TraineeDao traineeDao,
                                TrainerDao trainerDao,
-                               AuthService authService,
                                MeterRegistry registry) {
         this.trainingDao = trainingDao;
         this.trainingTypeDao = trainingTypeDao;
         this.traineeDao = traineeDao;
         this.trainerDao = trainerDao;
-        this.authService = authService;
 
         this.trainingCreatedCounter = registry.counter("gymcrm.trainings.created");
         this.listForTraineeTimer   = registry.timer("gymcrm.trainings.list", "side", "trainee");
@@ -85,9 +82,9 @@ public class TrainingServiceImpl implements TrainingService {
 
     @Override @Transactional(readOnly = true)
     public List<Training> listForTrainee(Credentials auth, String traineeUsername, TrainingCriteria c) {
-        var me = authService.authenticateTrainee(auth);
-        if (!me.getUser().getUsername().equalsIgnoreCase(traineeUsername))
-            throw new com.example.gymcrm.exceptions.AuthFailedException("Access denied to other trainee trainings");
+        String principal = auth.getUsername();
+        if (principal == null || !principal.equalsIgnoreCase(traineeUsername))
+            throw new AuthFailedException("Access denied to other trainee trainings");
 
         String nameLike = (c.getOtherPartyNameLike() == null) ? null : c.getOtherPartyNameLike().toLowerCase();
 
@@ -100,9 +97,9 @@ public class TrainingServiceImpl implements TrainingService {
 
     @Override @Transactional(readOnly = true)
     public List<Training> listForTrainer(Credentials auth, String trainerUsername, TrainingCriteria c) {
-        var me = authService.authenticateTrainer(auth);
-        if (!me.getUser().getUsername().equalsIgnoreCase(trainerUsername))
-            throw new com.example.gymcrm.exceptions.AuthFailedException("Access denied to other trainer trainings");
+        String principal = auth.getUsername();
+        if (principal == null || !principal.equalsIgnoreCase(trainerUsername))
+            throw new AuthFailedException("Access denied to other trainer trainings");
 
         String nameLike = (c.getOtherPartyNameLike() == null) ? null : c.getOtherPartyNameLike().toLowerCase();
 

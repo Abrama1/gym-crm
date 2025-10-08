@@ -8,12 +8,12 @@ import com.example.gymcrm.entity.Trainee;
 import com.example.gymcrm.entity.Trainer;
 import com.example.gymcrm.entity.User;
 import com.example.gymcrm.exceptions.*;
-import com.example.gymcrm.service.AuthService;
 import com.example.gymcrm.service.TraineeService;
 import com.example.gymcrm.util.PasswordGenerator;
 import com.example.gymcrm.util.UsernameGenerator;
 import io.micrometer.core.instrument.MeterRegistry;
 import org.slf4j.Logger; import org.slf4j.LoggerFactory;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -29,44 +29,46 @@ public class TraineeServiceImpl implements TraineeService {
     private final UserDao userDao;
     private final UsernameGenerator usernameGenerator;
     private final PasswordGenerator passwordGenerator;
-    private final AuthService authService;
     private final MeterRegistry meter;
+    private final PasswordEncoder passwordEncoder;
 
     public TraineeServiceImpl(TraineeDao traineeDao,
                               TrainerDao trainerDao,
                               UserDao userDao,
                               UsernameGenerator usernameGenerator,
                               PasswordGenerator passwordGenerator,
-                              AuthService authService,
-                              MeterRegistry meter) {
+                              MeterRegistry meter,
+                              PasswordEncoder passwordEncoder) {
         this.traineeDao = traineeDao;
         this.trainerDao = trainerDao;
         this.userDao = userDao;
         this.usernameGenerator = usernameGenerator;
         this.passwordGenerator = passwordGenerator;
-        this.authService = authService;
         this.meter = meter;
+        this.passwordEncoder = passwordEncoder;
     }
 
     @Override
     public Trainee create(Trainee trainee, String firstName, String lastName, boolean active) {
         String username = usernameGenerator.generateUnique(firstName, lastName);
-        String password = passwordGenerator.random10();
+        String rawPassword = passwordGenerator.random10();
 
         User user = new User();
         user.setFirstName(firstName);
         user.setLastName(lastName);
         user.setUsername(username);
-        user.setPassword(password);
+        user.setPlainPassword(rawPassword);               // returned once
+        user.setPassword(passwordEncoder.encode(rawPassword)); // store hash
         user.setActive(active);
         userDao.save(user);
 
         trainee.setUser(user);
         Trainee saved = traineeDao.save(trainee);
 
-        // metrics
         meter.counter("gym_registrations_total", "role", "trainee").increment();
-        if (active) meter.counter("gym_profile_activations_total", "role", "trainee", "action", "activate").increment();
+        if (active) {
+            meter.counter("gym_profile_activations_total", "role", "trainee", "action", "activate").increment();
+        }
 
         log.info("Created trainee id={} username={}", saved.getId(), username);
         return saved;
@@ -97,12 +99,12 @@ public class TraineeServiceImpl implements TraineeService {
     @Override @Transactional(readOnly = true)
     public List<Trainee> list(){ return new ArrayList<>(traineeDao.findAll()); }
 
-    // ---- auth-gated ----
+    // ---- auth-gated (principal-based) ----
 
     @Override @Transactional(readOnly = true)
     public Trainee getByUsername(Credentials auth, String username) {
-        var me = authService.authenticateTrainee(auth);
-        if (!me.getUser().getUsername().equalsIgnoreCase(username))
+        String principal = auth.getUsername();
+        if (principal == null || !principal.equalsIgnoreCase(username))
             throw new AuthFailedException("Access denied to other trainee profile");
         return traineeDao.findByUsername(username)
                 .orElseThrow(() -> new NotFoundException("Trainee not found: " + username));
@@ -110,16 +112,21 @@ public class TraineeServiceImpl implements TraineeService {
 
     @Override
     public void changePassword(Credentials auth, String newPassword) {
-        var me = authService.authenticateTrainee(auth);
+        String principal = auth.getUsername();
+        Trainee me = traineeDao.findByUsername(principal)
+                .orElseThrow(() -> new NotFoundException("Trainee not found: " + principal));
         User u = me.getUser();
-        u.setPassword(newPassword);
+        u.setPassword(passwordEncoder.encode(newPassword));  // hash on change
         userDao.save(u);
         log.info("Trainee {} changed password", u.getUsername());
     }
 
     @Override
     public Trainee updateProfile(Credentials auth, Trainee updates) {
-        var me = authService.authenticateTrainee(auth);
+        String principal = auth.getUsername();
+        Trainee me = traineeDao.findByUsername(principal)
+                .orElseThrow(() -> new NotFoundException("Trainee not found: " + principal));
+
         me.setAddress(updates.getAddress());
         me.setDateOfBirth(updates.getDateOfBirth());
         Trainee saved = traineeDao.save(me);
@@ -129,7 +136,9 @@ public class TraineeServiceImpl implements TraineeService {
 
     @Override
     public void activate(Credentials auth) {
-        var me = authService.authenticateTrainee(auth);
+        String principal = auth.getUsername();
+        Trainee me = traineeDao.findByUsername(principal)
+                .orElseThrow(() -> new NotFoundException("Trainee not found: " + principal));
         User u = me.getUser();
         if (u.isActive()) throw new AlreadyActiveException("Trainee already active");
         u.setActive(true); userDao.save(u);
@@ -139,7 +148,9 @@ public class TraineeServiceImpl implements TraineeService {
 
     @Override
     public void deactivate(Credentials auth) {
-        var me = authService.authenticateTrainee(auth);
+        String principal = auth.getUsername();
+        Trainee me = traineeDao.findByUsername(principal)
+                .orElseThrow(() -> new NotFoundException("Trainee not found: " + principal));
         User u = me.getUser();
         if (!u.isActive()) throw new AlreadyDeactivatedException("Trainee already deactivated");
         u.setActive(false); userDao.save(u);
@@ -149,10 +160,14 @@ public class TraineeServiceImpl implements TraineeService {
 
     @Override
     public void deleteByUsername(Credentials auth, String username) {
-        var me = authService.authenticateTrainee(auth);
-        if (!me.getUser().getUsername().equalsIgnoreCase(username))
+        String principal = auth.getUsername();
+        if (principal == null || !principal.equalsIgnoreCase(username))
             throw new AuthFailedException("Cannot delete another trainee");
+
+        Trainee me = traineeDao.findByUsername(username)
+                .orElseThrow(() -> new NotFoundException("Trainee not found: " + username));
         Long userId = me.getUser().getId();
+
         traineeDao.delete(me);
         userDao.deleteById(userId);
         log.info("Trainee {} deleted", username);
@@ -160,9 +175,12 @@ public class TraineeServiceImpl implements TraineeService {
 
     @Override
     public void setTrainers(Credentials auth, String traineeUsername, List<String> trainerUsernames) {
-        var me = authService.authenticateTrainee(auth);
-        if (!me.getUser().getUsername().equalsIgnoreCase(traineeUsername))
+        String principal = auth.getUsername();
+        if (principal == null || !principal.equalsIgnoreCase(traineeUsername))
             throw new AuthFailedException("Cannot modify trainers for another trainee");
+
+        Trainee me = traineeDao.findByUsername(principal)
+                .orElseThrow(() -> new NotFoundException("Trainee not found: " + principal));
 
         var newSet = new HashSet<Trainer>();
         for (String tu : trainerUsernames) {

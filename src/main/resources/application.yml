@@ -19,6 +19,8 @@ logging:
   level:
     org.hibernate.SQL: info
     org.springframework.web: info
+    # Uncomment for verbose security debugging during setup:
+    # org.springframework.security: debug
 
 management:
   endpoints:
@@ -39,3 +41,19 @@ management:
   metrics:
     tags:
       application: ${spring.application.name}
+
+# --- Security / JWT / Brute-force ---
+security:
+  jwt:
+    issuer: gym-crm
+    secret: ${JWT_SECRET:change-me-in-dev}   # set JWT_SECRET in env for non-local
+    ttl-minutes: 60
+  brute-force:
+    max-attempts: 3
+    lock-minutes: 5
+
+# --- CORS (used by SecurityConfig) ---
+cors:
+  allowed-origins: "*"
+  allowed-methods: "GET,POST,PUT,PATCH,DELETE,OPTIONS"
+  allowed-headers: "Authorization,Content-Type,X-Requested-With"

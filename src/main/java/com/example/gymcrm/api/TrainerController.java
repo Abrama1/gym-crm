@@ -9,8 +9,9 @@ import com.example.gymcrm.exceptions.NotFoundException;
 import com.example.gymcrm.service.TrainerService;
 import io.swagger.annotations.Api;
 import io.swagger.annotations.ApiOperation;
-import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -22,21 +23,26 @@ import java.util.stream.Collectors;
 public class TrainerController {
 
     private final TrainerService trainerService;
-    private final TrainingTypeDao trainingTypeDao; // used only to validate training type at registration
+    private final TrainingTypeDao trainingTypeDao;
 
     public TrainerController(TrainerService trainerService, TrainingTypeDao trainingTypeDao) {
         this.trainerService = trainerService;
         this.trainingTypeDao = trainingTypeDao;
     }
 
-    private static Credentials creds(HttpServletRequest req) {
-        return new Credentials(req.getHeader("X-Username"), req.getHeader("X-Password"));
+    private static String me() {
+        Authentication a = SecurityContextHolder.getContext().getAuthentication();
+        return (a == null) ? null : a.getName();
+    }
+    private static Credentials selfCreds() {
+        Credentials c = new Credentials();
+        c.setUsername(me());
+        return c;
     }
 
     @ApiOperation("Register a new trainer")
     @PostMapping("/register")
     public RegistrationResponse register(@RequestBody @Valid TrainerRegistrationRequest body) {
-        // validate training type name exists (constant table)
         trainingTypeDao.findByName(body.getSpecialization())
                 .orElseThrow(() -> new NotFoundException("Training type not found: " + body.getSpecialization()));
 
@@ -49,46 +55,42 @@ public class TrainerController {
 
     @ApiOperation("Get trainer profile by username")
     @GetMapping("/{username}")
-    public TrainerProfileResponse getProfile(@PathVariable String username, HttpServletRequest req) {
-        Trainer tr = trainerService.getByUsername(creds(req), username);
+    public TrainerProfileResponse getProfile(@PathVariable String username) {
+        Trainer tr = trainerService.getByUsername(selfCreds(), username);
         return toProfile(tr);
     }
 
     @ApiOperation("Update trainer profile (first/last name, active); specialization = read-only")
     @PutMapping("/{username}")
     public TrainerProfileResponse update(@PathVariable String username,
-                                         @RequestBody @Valid UpdateTrainerRequest body,
-                                         HttpServletRequest req) {
-        // authorize + load my entity
-        Trainer me = trainerService.getByUsername(creds(req), username);
+                                         @RequestBody @Valid UpdateTrainerRequest body) {
 
-        // patch allowed fields on nested User
-        User u = me.getUser();
+        Trainer meEntity = trainerService.getByUsername(selfCreds(), username);
+
+        User u = meEntity.getUser();
         u.setFirstName(body.getFirstName());
         u.setLastName(body.getLastName());
         u.setActive(Boolean.TRUE.equals(body.getActive()));
-        me.setUser(u);
+        meEntity.setUser(u);
 
-        // DO NOT touch specialization here (read-only)
-        Trainer saved = trainerService.update(me);
+        Trainer saved = trainerService.update(meEntity);
         return toProfile(saved);
     }
 
     @ApiOperation("Activate / De-Activate trainer (not idempotent)")
     @PatchMapping("/{username}/activation")
     public ResponseEntity<Void> activation(@PathVariable String username,
-                                           @RequestBody @Valid ActivationRequest body,
-                                           HttpServletRequest req) {
+                                           @RequestBody @Valid ActivationRequest body) {
+        // use current principal (self)
         if (Boolean.TRUE.equals(body.getActive())) {
-            trainerService.activate(creds(req));
+            trainerService.activate(selfCreds());
         } else {
-            trainerService.deactivate(creds(req));
+            trainerService.deactivate(selfCreds());
         }
         return ResponseEntity.ok().build();
     }
 
     // ---- mapping helpers ----
-
     private static TrainerProfileResponse toProfile(Trainer tr) {
         TrainerProfileResponse res = new TrainerProfileResponse();
         res.setUsername(tr.getUser().getUsername());

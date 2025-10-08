@@ -23,9 +23,17 @@ public class User {
     @Column(name = "username", nullable = false, unique = true)
     private String username;
 
+    // Stored as a hash (BCrypt).
     @Column(name = "password", nullable = false)
     private String password;
 
     @Column(name = "active", nullable = false)
     private boolean active;
+
+    /**
+     * Set only during registration so we can return it in the API response.
+     * Not persisted to the database.
+     */
+    @Transient
+    private String plainPassword;
 }
