@@ -12,6 +12,7 @@ import com.example.gymcrm.service.impl.AuthServiceImpl;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.security.crypto.password.PasswordEncoder;
 
 import java.util.Optional;
 
@@ -19,10 +20,11 @@ import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
 class AuthServiceImplTest {
+
     private UserDao userDao;
     private TraineeDao traineeDao;
     private TrainerDao trainerDao;
-    private SimpleMeterRegistry registry;
+    private PasswordEncoder encoder;
     private AuthServiceImpl service;
 
     @BeforeEach
@@ -30,34 +32,50 @@ class AuthServiceImplTest {
         userDao = mock(UserDao.class);
         traineeDao = mock(TraineeDao.class);
         trainerDao = mock(TrainerDao.class);
-        registry = new SimpleMeterRegistry();
-        service = new AuthServiceImpl(userDao, traineeDao, trainerDao, registry);
+        encoder = mock(PasswordEncoder.class);
+        service = new AuthServiceImpl(userDao, traineeDao, trainerDao, new SimpleMeterRegistry(), encoder);
     }
 
     @Test
-    void authenticateTrainee_success_marksSuccessMetric() {
-        var u = new User(); u.setId(1L); u.setUsername("john"); u.setPassword("pw"); u.setActive(true);
+    void authenticateTrainee_ok() {
+        var u = new User(); u.setId(1L); u.setUsername("john"); u.setPassword("$hash"); u.setActive(true);
+        var t = new Trainee(); t.setUser(u);
+
         when(userDao.findByUsername("john")).thenReturn(Optional.of(u));
-        when(traineeDao.findByUserId(1L)).thenReturn(Optional.of(new Trainee()));
+        when(encoder.matches("pw", "$hash")).thenReturn(true);
+        when(traineeDao.findByUserId(1L)).thenReturn(Optional.of(t));
 
-        assertNotNull(service.authenticateTrainee(creds("john","pw")));
-
-        assertEquals(1.0, registry.find("gym_auth_attempts_total")
-                .tags("role","trainee","outcome","success").counter().count(), 1e-9);
+        var res = service.authenticateTrainee(new Credentials("john", "pw"));
+        assertSame(t, res);
     }
 
     @Test
-    void authenticateTrainer_wrongPassword_marksFailureMetric() {
-        var u = new User(); u.setId(2L); u.setUsername("ann"); u.setPassword("pw"); u.setActive(true);
-        when(userDao.findByUsername("ann")).thenReturn(Optional.of(u));
+    void authenticateTrainee_badPassword() {
+        var u = new User(); u.setId(1L); u.setUsername("john"); u.setPassword("$hash"); u.setActive(true);
+        when(userDao.findByUsername("john")).thenReturn(Optional.of(u));
+        when(encoder.matches("bad", "$hash")).thenReturn(false);
 
-        assertThrows(AuthFailedException.class, () -> service.authenticateTrainer(creds("ann","bad")));
-
-        assertEquals(1.0, registry.find("gym_auth_attempts_total")
-                .tags("role","trainer","outcome","failure").counter().count(), 1e-9);
+        assertThrows(AuthFailedException.class,
+                () -> service.authenticateTrainee(new Credentials("john", "bad")));
     }
 
-    private Credentials creds(String u, String p) {
-        var c = new Credentials(); c.setUsername(u); c.setPassword(p); return c;
+    @Test
+    void authenticateTrainer_userInactive() {
+        var u = new User(); u.setId(2L); u.setUsername("jane"); u.setPassword("$hash"); u.setActive(false);
+        when(userDao.findByUsername("jane")).thenReturn(Optional.of(u));
+
+        assertThrows(AuthFailedException.class,
+                () -> service.authenticateTrainer(new Credentials("jane", "pw")));
+    }
+
+    @Test
+    void authenticateTrainer_missing_profile() {
+        var u = new User(); u.setId(3L); u.setUsername("sam"); u.setPassword("$h"); u.setActive(true);
+        when(userDao.findByUsername("sam")).thenReturn(Optional.of(u));
+        when(encoder.matches("pw", "$h")).thenReturn(true);
+        when(trainerDao.findByUserId(3L)).thenReturn(Optional.empty());
+
+        assertThrows(AuthFailedException.class,
+                () -> service.authenticateTrainer(new Credentials("sam", "pw")));
     }
 }

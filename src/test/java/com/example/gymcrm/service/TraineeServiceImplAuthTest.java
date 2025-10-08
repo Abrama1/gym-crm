@@ -8,39 +8,46 @@ import com.example.gymcrm.entity.Trainee;
 import com.example.gymcrm.entity.User;
 import com.example.gymcrm.exceptions.AuthFailedException;
 import com.example.gymcrm.service.impl.TraineeServiceImpl;
-import com.example.gymcrm.service.AuthService;
-import com.example.gymcrm.util.PasswordGenerator;
-import com.example.gymcrm.util.UsernameGenerator;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.security.crypto.password.PasswordEncoder;
+
+import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
 class TraineeServiceImplAuthTest {
-    private TraineeServiceImpl svc;
-    private AuthService auth;
+
+    private TraineeServiceImpl service;
     private TraineeDao traineeDao;
 
     @BeforeEach
     void setUp() {
         traineeDao = mock(TraineeDao.class);
-        svc = new TraineeServiceImpl(traineeDao, mock(TrainerDao.class), mock(UserDao.class),
-                mock(UsernameGenerator.class), mock(PasswordGenerator.class),
-                auth = mock(AuthService.class), new SimpleMeterRegistry());
+        var trainerDao = mock(TrainerDao.class);
+        var userDao = mock(UserDao.class);
+        var encoder = mock(PasswordEncoder.class);
+
+        service = new TraineeServiceImpl(
+                traineeDao, trainerDao, userDao,
+                null, null, new SimpleMeterRegistry(), encoder);
     }
 
     @Test
-    void getByUsername_otherUser_forbidden() {
-        var meU = new User(); meU.setUsername("me");
-        var me = new Trainee(); me.setUser(meU);
-        when(auth.authenticateTrainee(any())).thenReturn(me);
-
-        assertThrows(AuthFailedException.class, () -> svc.getByUsername(creds("me","p"), "other"));
+    void getByUsername_denies_otherUser() {
+        assertThrows(AuthFailedException.class,
+                () -> service.getByUsername(new Credentials("me", "pw"), "someoneelse"));
     }
 
-    private Credentials creds(String u, String p) {
-        var c = new Credentials(); c.setUsername(u); c.setPassword(p); return c;
+    @Test
+    void getByUsername_ok_self() {
+        var meU = new User(); meU.setUsername("me");
+        var me = new Trainee(); me.setUser(meU);
+
+        when(traineeDao.findByUsername("me")).thenReturn(Optional.of(me));
+        var res = service.getByUsername(new Credentials("me", "pw"), "me");
+        assertSame(me, res);
     }
 }

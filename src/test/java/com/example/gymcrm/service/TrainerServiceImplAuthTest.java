@@ -6,37 +6,42 @@ import com.example.gymcrm.dto.Credentials;
 import com.example.gymcrm.entity.Trainer;
 import com.example.gymcrm.entity.User;
 import com.example.gymcrm.exceptions.AuthFailedException;
-import com.example.gymcrm.service.AuthService;
 import com.example.gymcrm.service.impl.TrainerServiceImpl;
-import com.example.gymcrm.util.PasswordGenerator;
-import com.example.gymcrm.util.UsernameGenerator;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.security.crypto.password.PasswordEncoder;
+
+import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
 class TrainerServiceImplAuthTest {
-    private TrainerServiceImpl svc;
-    private AuthService auth;
+
+    private TrainerServiceImpl service;
+    private TrainerDao trainerDao;
 
     @BeforeEach
     void setUp() {
-        svc = new TrainerServiceImpl(mock(TrainerDao.class), mock(UserDao.class),
-                mock(UsernameGenerator.class), mock(PasswordGenerator.class),
-                auth = mock(AuthService.class), new SimpleMeterRegistry());
+        trainerDao = mock(TrainerDao.class);
+        var userDao = mock(UserDao.class);
+        var encoder = mock(PasswordEncoder.class);
+        service = new TrainerServiceImpl(trainerDao, userDao, null, null, new SimpleMeterRegistry(), encoder);
     }
 
     @Test
-    void getByUsername_otherUser_forbidden() {
-        var me = new Trainer(); var u = new User(); u.setUsername("me"); me.setUser(u);
-        when(auth.authenticateTrainer(any())).thenReturn(me);
-
-        assertThrows(AuthFailedException.class, () -> svc.getByUsername(creds("me","p"), "other"));
+    void getByUsername_denies_other() {
+        assertThrows(AuthFailedException.class,
+                () -> service.getByUsername(new Credentials("trainer1","pw"), "another"));
     }
 
-    private com.example.gymcrm.dto.Credentials creds(String u, String p) {
-        var c = new com.example.gymcrm.dto.Credentials(); c.setUsername(u); c.setPassword(p); return c;
+    @Test
+    void getByUsername_ok_self() {
+        var meU = new User(); meU.setUsername("trainer1");
+        var me = new Trainer(); me.setUser(meU);
+
+        when(trainerDao.findByUsername("trainer1")).thenReturn(Optional.of(me));
+        assertSame(me, service.getByUsername(new Credentials("trainer1","pw"), "trainer1"));
     }
 }
