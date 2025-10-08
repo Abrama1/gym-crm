@@ -12,6 +12,7 @@ import com.example.gymcrm.util.PasswordGenerator;
 import com.example.gymcrm.util.UsernameGenerator;
 import io.micrometer.core.instrument.MeterRegistry;
 import org.slf4j.Logger; import org.slf4j.LoggerFactory;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -28,31 +29,35 @@ public class TrainerServiceImpl implements TrainerService {
     private final PasswordGenerator passwordGenerator;
     private final AuthService authService;
     private final MeterRegistry meter;
+    private final PasswordEncoder passwordEncoder;
 
     public TrainerServiceImpl(TrainerDao trainerDao,
                               UserDao userDao,
                               UsernameGenerator usernameGenerator,
                               PasswordGenerator passwordGenerator,
                               AuthService authService,
-                              MeterRegistry meter) {
+                              MeterRegistry meter,
+                              PasswordEncoder passwordEncoder) {
         this.trainerDao = trainerDao;
         this.userDao = userDao;
         this.usernameGenerator = usernameGenerator;
         this.passwordGenerator = passwordGenerator;
         this.authService = authService;
         this.meter = meter;
+        this.passwordEncoder = passwordEncoder;
     }
 
     @Override
     public Trainer create(Trainer trainer, String firstName, String lastName, boolean active) {
         String username = usernameGenerator.generateUnique(firstName, lastName);
-        String password = passwordGenerator.random10();
+        String rawPassword = passwordGenerator.random10();
 
         User user = new User();
         user.setFirstName(firstName);
         user.setLastName(lastName);
         user.setUsername(username);
-        user.setPassword(password);
+        user.setPlainPassword(rawPassword);  // returned once in response
+        user.setPassword(passwordEncoder.encode(rawPassword)); // stored as hash
         user.setActive(active);
         userDao.save(user);
 
@@ -61,7 +66,9 @@ public class TrainerServiceImpl implements TrainerService {
 
         // metrics
         meter.counter("gym_registrations_total", "role", "trainer").increment();
-        if (active) meter.counter("gym_profile_activations_total", "role", "trainer", "action", "activate").increment();
+        if (active) {
+            meter.counter("gym_profile_activations_total", "role", "trainer", "action", "activate").increment();
+        }
 
         log.info("Created trainer id={} username={}", saved.getId(), username);
         return saved;
@@ -97,7 +104,7 @@ public class TrainerServiceImpl implements TrainerService {
     public void changePassword(Credentials auth, String newPassword) {
         var me = authService.authenticateTrainer(auth);
         User u = me.getUser();
-        u.setPassword(newPassword);
+        u.setPassword(passwordEncoder.encode(newPassword));  // hash on change
         userDao.save(u);
         log.info("Trainer {} changed password", u.getUsername());
     }

@@ -14,6 +14,7 @@ import com.example.gymcrm.util.PasswordGenerator;
 import com.example.gymcrm.util.UsernameGenerator;
 import io.micrometer.core.instrument.MeterRegistry;
 import org.slf4j.Logger; import org.slf4j.LoggerFactory;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -31,6 +32,7 @@ public class TraineeServiceImpl implements TraineeService {
     private final PasswordGenerator passwordGenerator;
     private final AuthService authService;
     private final MeterRegistry meter;
+    private final PasswordEncoder passwordEncoder;
 
     public TraineeServiceImpl(TraineeDao traineeDao,
                               TrainerDao trainerDao,
@@ -38,7 +40,8 @@ public class TraineeServiceImpl implements TraineeService {
                               UsernameGenerator usernameGenerator,
                               PasswordGenerator passwordGenerator,
                               AuthService authService,
-                              MeterRegistry meter) {
+                              MeterRegistry meter,
+                              PasswordEncoder passwordEncoder) {
         this.traineeDao = traineeDao;
         this.trainerDao = trainerDao;
         this.userDao = userDao;
@@ -46,18 +49,20 @@ public class TraineeServiceImpl implements TraineeService {
         this.passwordGenerator = passwordGenerator;
         this.authService = authService;
         this.meter = meter;
+        this.passwordEncoder = passwordEncoder;
     }
 
     @Override
     public Trainee create(Trainee trainee, String firstName, String lastName, boolean active) {
         String username = usernameGenerator.generateUnique(firstName, lastName);
-        String password = passwordGenerator.random10();
+        String rawPassword = passwordGenerator.random10();
 
         User user = new User();
         user.setFirstName(firstName);
         user.setLastName(lastName);
         user.setUsername(username);
-        user.setPassword(password);
+        user.setPlainPassword(rawPassword);  // transient, so we can return it once
+        user.setPassword(passwordEncoder.encode(rawPassword));  // store hash only
         user.setActive(active);
         userDao.save(user);
 
@@ -66,7 +71,9 @@ public class TraineeServiceImpl implements TraineeService {
 
         // metrics
         meter.counter("gym_registrations_total", "role", "trainee").increment();
-        if (active) meter.counter("gym_profile_activations_total", "role", "trainee", "action", "activate").increment();
+        if (active) {
+            meter.counter("gym_profile_activations_total", "role", "trainee", "action", "activate").increment();
+        }
 
         log.info("Created trainee id={} username={}", saved.getId(), username);
         return saved;
@@ -112,7 +119,7 @@ public class TraineeServiceImpl implements TraineeService {
     public void changePassword(Credentials auth, String newPassword) {
         var me = authService.authenticateTrainee(auth);
         User u = me.getUser();
-        u.setPassword(newPassword);
+        u.setPassword(passwordEncoder.encode(newPassword));  // hash on change
         userDao.save(u);
         log.info("Trainee {} changed password", u.getUsername());
     }

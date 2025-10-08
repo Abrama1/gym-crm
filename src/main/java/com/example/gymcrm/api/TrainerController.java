@@ -4,7 +4,6 @@ import com.example.gymcrm.dao.TrainingTypeDao;
 import com.example.gymcrm.dto.*;
 import com.example.gymcrm.entity.Trainee;
 import com.example.gymcrm.entity.Trainer;
-import com.example.gymcrm.entity.User;
 import com.example.gymcrm.exceptions.NotFoundException;
 import com.example.gymcrm.service.TrainerService;
 import io.swagger.annotations.Api;
@@ -44,7 +43,9 @@ public class TrainerController {
         trainer.setSpecialization(body.getSpecialization());
 
         Trainer saved = trainerService.create(trainer, body.getFirstName(), body.getLastName(), true);
-        return new RegistrationResponse(saved.getUser().getUsername(), saved.getUser().getPassword());
+
+        // Return the generated (plain) password, not the hashed one
+        return new RegistrationResponse(saved.getUser().getUsername(), saved.getUser().getPlainPassword());
     }
 
     @ApiOperation("Get trainer profile by username")
@@ -62,14 +63,13 @@ public class TrainerController {
         // authorize + load my entity
         Trainer me = trainerService.getByUsername(creds(req), username);
 
-        // patch allowed fields on nested User
-        User u = me.getUser();
+        // patch allowed fields on nested User (specialization is read-only)
+        var u = me.getUser();
         u.setFirstName(body.getFirstName());
         u.setLastName(body.getLastName());
         u.setActive(Boolean.TRUE.equals(body.getActive()));
         me.setUser(u);
 
-        // DO NOT touch specialization here (read-only)
         Trainer saved = trainerService.update(me);
         return toProfile(saved);
     }

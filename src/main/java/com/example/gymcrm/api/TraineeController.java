@@ -40,9 +40,14 @@ public class TraineeController {
                 trainee,
                 body.getFirstName(),
                 body.getLastName(),
-                true);
+                true
+        );
 
-        return new RegistrationResponse(saved.getUser().getUsername(), saved.getUser().getPassword());
+        // IMPORTANT: return the generated (plain) password, not the hashed one
+        return new RegistrationResponse(
+                saved.getUser().getUsername(),
+                saved.getUser().getPlainPassword()
+        );
     }
 
     @ApiOperation("Get trainee profile by username")
@@ -58,7 +63,7 @@ public class TraineeController {
         res.setActive(t.getUser().isActive());
         res.setTrainers(
                 t.getTrainers().stream()
-                        .map(this::toInnerTrainerSummary) // <-- inner class type
+                        .map(this::toInnerTrainerSummary)
                         .collect(Collectors.toList())
         );
         return res;
@@ -155,12 +160,10 @@ public class TraineeController {
         Object spec = tr.getSpecialization();
         if (spec == null) return null;
         try {
-            // Try to call getName() reflectively if present
             var m = spec.getClass().getMethod("getName");
             Object v = m.invoke(spec);
             return v != null ? v.toString() : null;
         } catch (Exception ignore) {
-            // Fallback to toString() (covers String case)
             return spec.toString();
         }
     }
