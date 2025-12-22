@@ -6,6 +6,7 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.config.annotation.authentication.configuration.AuthenticationConfiguration;
+import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.config.http.SessionCreationPolicy;
@@ -22,6 +23,7 @@ import java.util.List;
 
 @Configuration
 @EnableWebSecurity
+@EnableMethodSecurity // <-- we use @PreAuthorize in controllers
 public class SecurityConfig {
 
     private final JwtAuthFilter jwtFilter;
@@ -32,16 +34,18 @@ public class SecurityConfig {
 
     @Bean
     public PasswordEncoder passwordEncoder() {
-        return new BCryptPasswordEncoder(); // salted, adaptive
+        return new BCryptPasswordEncoder(); // salted & adaptive
     }
 
     @Bean
     public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
         http
-                // we use JWT -> stateless
+                // stateless JWT
                 .csrf(csrf -> csrf.disable())
                 .sessionManagement(sm -> sm.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
-                .cors(cors -> {}) // use CorsConfigurationSource bean
+                // CORS via bean below
+                .cors(cors -> {})
+                // consistent 401 JSON
                 .exceptionHandling(ex -> ex.authenticationEntryPoint((req, res, e) -> {
                     res.setStatus(HttpStatus.UNAUTHORIZED.value());
                     res.setContentType("application/json");
@@ -52,20 +56,23 @@ public class SecurityConfig {
                         .requestMatchers(
                                 "/api/trainees/register",
                                 "/api/trainers/register",
-                                "/api/auth/login",
+                                "/api/auth/**",
                                 "/swagger-ui/**", "/v3/api-docs/**",
                                 "/actuator/health/**", "/actuator/info"
                         ).permitAll()
-                        // everything else needs a valid JWT
+                        // everything else requires JWT
                         .anyRequest().authenticated()
                 )
-                // put our JWT reader ahead of UsernamePasswordAuthenticationFilter
+                // place our JWT parser before UsernamePasswordAuthenticationFilter
                 .addFilterBefore(jwtFilter, UsernamePasswordAuthenticationFilter.class);
 
         return http.build();
     }
 
-    // read allowed origins from property (comma-separated), default = *
+    // Allowed origins read from application.yml (comma-separated). Example:
+    // security:
+    //   cors:
+    //     allowed-origins: "http://localhost:3000,http://127.0.0.1:3000"
     @Bean
     public CorsConfigurationSource corsConfigurationSource(
             @Value("${security.cors.allowed-origins:*}") String allowed) {
