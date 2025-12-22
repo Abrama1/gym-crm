@@ -6,6 +6,8 @@ import com.example.gymcrm.dao.UserDao;
 import com.example.gymcrm.entity.Trainee;
 import com.example.gymcrm.exceptions.NotFoundException;
 import com.example.gymcrm.service.impl.TraineeServiceImpl;
+import com.example.gymcrm.util.PasswordGenerator;
+import com.example.gymcrm.util.UsernameGenerator;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -19,29 +21,46 @@ import static org.mockito.Mockito.*;
 class TraineeServiceImplCrudNegativeTest {
 
     private TraineeDao traineeDao;
+    private TrainerDao trainerDao;
+    private UserDao userDao;
+    private UsernameGenerator usernameGenerator;
+    private PasswordGenerator passwordGenerator;
+    private PasswordEncoder passwordEncoder;
     private TraineeServiceImpl service;
 
     @BeforeEach
-    void setup() {
+    void setUp() {
         traineeDao = mock(TraineeDao.class);
-        var trainerDao = mock(TrainerDao.class);
-        var userDao = mock(UserDao.class);
-        var encoder = mock(PasswordEncoder.class);
+        trainerDao = mock(TrainerDao.class);
+        userDao = mock(UserDao.class);
+        usernameGenerator = mock(UsernameGenerator.class);
+        passwordGenerator = mock(PasswordGenerator.class);
+        passwordEncoder = mock(PasswordEncoder.class);
 
-        service = new TraineeServiceImpl(traineeDao, trainerDao, userDao,
-                null, null, new SimpleMeterRegistry(), encoder);
+        service = new TraineeServiceImpl(
+                traineeDao,
+                trainerDao,
+                userDao,
+                usernameGenerator,
+                passwordGenerator,
+                new SimpleMeterRegistry(),
+                passwordEncoder
+        );
     }
 
     @Test
-    void update_throws_when_notFound() {
-        var t = new Trainee(); t.setId(99L);
-        when(traineeDao.findById(99L)).thenReturn(Optional.empty());
+    void update_notFound() {
+        Trainee t = new Trainee();
+        t.setId(7L);
+
+        when(traineeDao.findById(7L)).thenReturn(Optional.empty());
+
         assertThrows(NotFoundException.class, () -> service.update(t));
     }
 
     @Test
-    void delete_throws_when_notFound() {
-        when(traineeDao.findById(42L)).thenReturn(Optional.empty());
-        assertThrows(NotFoundException.class, () -> service.delete(42L));
+    void delete_notFound() {
+        when(traineeDao.findById(9L)).thenReturn(Optional.empty());
+        assertThrows(NotFoundException.class, () -> service.delete(9L));
     }
 }
