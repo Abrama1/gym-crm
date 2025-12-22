@@ -7,8 +7,7 @@ import com.example.gymcrm.service.TraineeService;
 import com.example.gymcrm.service.TrainerService;
 import io.swagger.annotations.ApiOperation;
 import jakarta.validation.Valid;
-import org.springframework.security.core.Authentication;
-import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -26,35 +25,23 @@ public class TraineeController {
         this.trainerService = trainerService;
     }
 
-    // ---- helpers (JWT principal -> Credentials.username) ----
-    private static String me() {
-        Authentication a = SecurityContextHolder.getContext().getAuthentication();
-        return (a == null) ? null : a.getName();
-    }
-    private static Credentials selfCreds() {
-        Credentials c = new Credentials();
-        c.setUsername(me());
-        c.setPassword(null); // password no longer needed post-JWT
-        return c;
-    }
-
     @ApiOperation("Register a new trainee")
     @PostMapping("/register")
+    @PreAuthorize("permitAll()")
     public RegistrationResponse register(@RequestBody @Valid TraineeRegistrationRequest body) {
         Trainee trainee = new Trainee();
         trainee.setAddress(body.getAddress());
         trainee.setDateOfBirth(body.getDateOfBirth());
 
         Trainee saved = traineeService.create(trainee, body.getFirstName(), body.getLastName(), true);
-
-        // return the one-time plaintext (service hashed it internally)
-        return new RegistrationResponse(saved.getUser().getUsername(), saved.getUser().getPassword());
+        return new RegistrationResponse(saved.getUser().getUsername(), saved.getUser().getPlainPassword());
     }
 
     @ApiOperation("Get trainee profile by username")
     @GetMapping("/{username}")
+    @PreAuthorize("hasRole('TRAINEE') and #username == authentication.name")
     public TraineeProfileResponse getProfile(@PathVariable String username) {
-        Trainee t = traineeService.getByUsername(selfCreds(), username);
+        Trainee t = traineeService.getByUsername(username);
         TraineeProfileResponse res = new TraineeProfileResponse();
         res.setUsername(t.getUser().getUsername());
         res.setFirstName(t.getUser().getFirstName());
@@ -72,21 +59,20 @@ public class TraineeController {
 
     @ApiOperation("Update trainee profile")
     @PutMapping("/{username}")
+    @PreAuthorize("hasRole('TRAINEE') and #username == authentication.name")
     public TraineeProfileResponse update(@PathVariable String username,
                                          @RequestBody @Valid UpdateTraineeRequest body) {
-        // enforce self via service
-        Trainee current = traineeService.getByUsername(selfCreds(), username);
 
-        // patch allowed fields on Trainee
         Trainee patch = new Trainee();
         patch.setAddress(body.getAddress());
         patch.setDateOfBirth(body.getDateOfBirth());
-        Trainee updated = traineeService.updateProfile(selfCreds(), patch);
+        Trainee updated = traineeService.updateProfile(username, patch);
 
-        // propagate first/last/active on joined User
+        // propagate nested User fields (first/last/active) through service.update()
+        Trainee current = traineeService.getByUsername(username);
         if (body.getFirstName() != null) current.getUser().setFirstName(body.getFirstName());
-        if (body.getLastName()  != null) current.getUser().setLastName(body.getLastName());
-        if (body.getActive()    != null) current.getUser().setActive(body.getActive());
+        if (body.getLastName() != null)  current.getUser().setLastName(body.getLastName());
+        if (body.getActive() != null)    current.getUser().setActive(body.getActive());
         traineeService.update(current);
 
         TraineeProfileResponse res = new TraineeProfileResponse();
@@ -96,22 +82,26 @@ public class TraineeController {
         res.setDateOfBirth(updated.getDateOfBirth());
         res.setAddress(updated.getAddress());
         res.setActive(current.getUser().isActive());
-        res.setTrainers(updated.getTrainers().stream()
-                .map(this::toInnerTrainerSummary)
-                .collect(Collectors.toList()));
+        res.setTrainers(
+                updated.getTrainers().stream()
+                        .map(this::toInnerTrainerSummary)
+                        .collect(Collectors.toList())
+        );
         return res;
     }
 
     @ApiOperation("Delete trainee profile")
     @DeleteMapping("/{username}")
+    @PreAuthorize("hasRole('TRAINEE') and #username == authentication.name")
     public void delete(@PathVariable String username) {
-        traineeService.deleteByUsername(selfCreds(), username);
+        traineeService.deleteByUsername(username);
     }
 
     @ApiOperation("Get not-assigned active trainers for a trainee")
     @GetMapping("/{username}/trainers/available")
+    @PreAuthorize("hasRole('TRAINEE') and #username == authentication.name")
     public TrainersListResponse availableTrainers(@PathVariable String username) {
-        List<Trainer> list = trainerService.listNotAssignedToTrainee(selfCreds(), username);
+        List<Trainer> list = trainerService.listNotAssignedToTrainee(username);
         TrainersListResponse res = new TrainersListResponse();
         res.setItems(list.stream().map(this::toTopLevelTrainerSummary).collect(Collectors.toList()));
         return res;
@@ -119,17 +109,18 @@ public class TraineeController {
 
     @ApiOperation("Replace trainee's trainer list")
     @PutMapping("/{username}/trainers")
+    @PreAuthorize("hasRole('TRAINEE') and #username == authentication.name")
     public TrainersListResponse setTrainers(@PathVariable String username,
                                             @RequestBody @Valid UpdateTraineeTrainersRequest body) {
-        traineeService.setTrainers(selfCreds(), username, body.getTrainers());
-        Trainee t = traineeService.getByUsername(selfCreds(), username);
+        traineeService.setTrainers(username, body.getTrainers());
+        Trainee t = traineeService.getByUsername(username);
 
         TrainersListResponse res = new TrainersListResponse();
         res.setItems(t.getTrainers().stream().map(this::toTopLevelTrainerSummary).collect(Collectors.toList()));
         return res;
     }
 
-    // ---- mappers ----
+    // --- mappers ---
     private TraineeProfileResponse.TrainerSummary toInnerTrainerSummary(Trainer tr) {
         TraineeProfileResponse.TrainerSummary s = new TraineeProfileResponse.TrainerSummary();
         s.setUsername(tr.getUser().getUsername());
@@ -154,7 +145,7 @@ public class TraineeController {
         try {
             var m = spec.getClass().getMethod("getName");
             Object v = m.invoke(spec);
-            return (v != null) ? v.toString() : null;
+            return v != null ? v.toString() : null;
         } catch (Exception ignore) {
             return spec.toString();
         }

@@ -1,10 +1,8 @@
 package com.example.gymcrm.service.impl;
 
 import com.example.gymcrm.dao.*;
-import com.example.gymcrm.dto.Credentials;
 import com.example.gymcrm.dto.TrainingCriteria;
 import com.example.gymcrm.entity.*;
-import com.example.gymcrm.exceptions.AuthFailedException;
 import com.example.gymcrm.exceptions.NotFoundException;
 import com.example.gymcrm.service.TrainingService;
 import io.micrometer.core.instrument.Counter;
@@ -26,7 +24,6 @@ public class TrainingServiceImpl implements TrainingService {
     private final TraineeDao traineeDao;
     private final TrainerDao trainerDao;
 
-    // metrics
     private final Counter trainingCreatedCounter;
     private final Timer listForTraineeTimer;
     private final Timer listForTrainerTimer;
@@ -81,13 +78,8 @@ public class TrainingServiceImpl implements TrainingService {
     public List<Training> list(){ return new ArrayList<>(trainingDao.findAll()); }
 
     @Override @Transactional(readOnly = true)
-    public List<Training> listForTrainee(Credentials auth, String traineeUsername, TrainingCriteria c) {
-        String principal = auth.getUsername();
-        if (principal == null || !principal.equalsIgnoreCase(traineeUsername))
-            throw new AuthFailedException("Access denied to other trainee trainings");
-
+    public List<Training> listForTrainee(String traineeUsername, TrainingCriteria c) {
         String nameLike = (c.getOtherPartyNameLike() == null) ? null : c.getOtherPartyNameLike().toLowerCase();
-
         return listForTraineeTimer.record(() ->
                 new ArrayList<>(trainingDao.listForTrainee(
                         traineeUsername, c.getFrom(), c.getTo(), nameLike, c.getTrainingType()
@@ -96,13 +88,8 @@ public class TrainingServiceImpl implements TrainingService {
     }
 
     @Override @Transactional(readOnly = true)
-    public List<Training> listForTrainer(Credentials auth, String trainerUsername, TrainingCriteria c) {
-        String principal = auth.getUsername();
-        if (principal == null || !principal.equalsIgnoreCase(trainerUsername))
-            throw new AuthFailedException("Access denied to other trainer trainings");
-
+    public List<Training> listForTrainer(String trainerUsername, TrainingCriteria c) {
         String nameLike = (c.getOtherPartyNameLike() == null) ? null : c.getOtherPartyNameLike().toLowerCase();
-
         return listForTrainerTimer.record(() ->
                 new ArrayList<>(trainingDao.listForTrainer(
                         trainerUsername, c.getFrom(), c.getTo(), nameLike, c.getTrainingType()

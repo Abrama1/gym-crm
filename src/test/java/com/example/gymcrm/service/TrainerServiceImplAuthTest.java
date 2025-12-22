@@ -2,11 +2,11 @@ package com.example.gymcrm.service;
 
 import com.example.gymcrm.dao.TrainerDao;
 import com.example.gymcrm.dao.UserDao;
-import com.example.gymcrm.dto.Credentials;
 import com.example.gymcrm.entity.Trainer;
-import com.example.gymcrm.entity.User;
-import com.example.gymcrm.exceptions.AuthFailedException;
+import com.example.gymcrm.exceptions.NotFoundException;
 import com.example.gymcrm.service.impl.TrainerServiceImpl;
+import com.example.gymcrm.util.PasswordGenerator;
+import com.example.gymcrm.util.UsernameGenerator;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -19,29 +19,39 @@ import static org.mockito.Mockito.*;
 
 class TrainerServiceImplAuthTest {
 
-    private TrainerServiceImpl service;
     private TrainerDao trainerDao;
+    private UserDao userDao;
+    private UsernameGenerator usernameGenerator;
+    private PasswordGenerator passwordGenerator;
+    private PasswordEncoder passwordEncoder;
+    private TrainerServiceImpl service;
 
     @BeforeEach
     void setUp() {
         trainerDao = mock(TrainerDao.class);
-        var userDao = mock(UserDao.class);
-        var encoder = mock(PasswordEncoder.class);
-        service = new TrainerServiceImpl(trainerDao, userDao, null, null, new SimpleMeterRegistry(), encoder);
+        userDao = mock(UserDao.class);
+        usernameGenerator = mock(UsernameGenerator.class);
+        passwordGenerator = mock(PasswordGenerator.class);
+        passwordEncoder = mock(PasswordEncoder.class);
+
+        service = new TrainerServiceImpl(
+                trainerDao, userDao,
+                usernameGenerator, passwordGenerator,
+                new SimpleMeterRegistry(), passwordEncoder
+        );
     }
 
     @Test
-    void getByUsername_denies_other() {
-        assertThrows(AuthFailedException.class,
-                () -> service.getByUsername(new Credentials("trainer1","pw"), "another"));
+    void getByUsername_ok() {
+        Trainer tr = new Trainer();
+        when(trainerDao.findByUsername("bob")).thenReturn(Optional.of(tr));
+
+        assertSame(tr, service.getByUsername("bob"));
     }
 
     @Test
-    void getByUsername_ok_self() {
-        var meU = new User(); meU.setUsername("trainer1");
-        var me = new Trainer(); me.setUser(meU);
-
-        when(trainerDao.findByUsername("trainer1")).thenReturn(Optional.of(me));
-        assertSame(me, service.getByUsername(new Credentials("trainer1","pw"), "trainer1"));
+    void getByUsername_notFound() {
+        when(trainerDao.findByUsername("bob")).thenReturn(Optional.empty());
+        assertThrows(NotFoundException.class, () -> service.getByUsername("bob"));
     }
 }

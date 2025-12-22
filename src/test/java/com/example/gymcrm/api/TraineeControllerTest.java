@@ -6,107 +6,182 @@ import com.example.gymcrm.entity.Trainer;
 import com.example.gymcrm.entity.User;
 import com.example.gymcrm.service.TraineeService;
 import com.example.gymcrm.service.TrainerService;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.springframework.http.MediaType;
-import org.springframework.test.web.servlet.MockMvc;
 
 import java.time.LocalDate;
 import java.util.List;
 
-import static org.mockito.ArgumentMatchers.*;
+import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
-import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
-import static org.springframework.test.web.servlet.setup.MockMvcBuilders.standaloneSetup;
 
 class TraineeControllerTest {
 
-    private MockMvc mockMvc;
     private TraineeService traineeService;
     private TrainerService trainerService;
-    private final ObjectMapper om = new ObjectMapper().registerModule(new JavaTimeModule());
+    private TraineeController controller;
 
     @BeforeEach
     void setUp() {
         traineeService = mock(TraineeService.class);
         trainerService = mock(TrainerService.class);
-        mockMvc = standaloneSetup(new TraineeController(traineeService, trainerService)).build();
+        controller = new TraineeController(traineeService, trainerService);
     }
 
     @Test
-    void register_ok() throws Exception {
-        var u = new User();
-        u.setUsername("john.smith");
-        u.setPlainPassword("rawPw123"); // one-time password returned
+    void register_returnsUsernameAndPlainPassword() {
+        TraineeRegistrationRequest req = new TraineeRegistrationRequest();
+        req.setFirstName("John");
+        req.setLastName("Doe");
+        req.setAddress("Tbilisi");
+        req.setDateOfBirth(LocalDate.of(2000, 1, 1));
 
-        var saved = new Trainee();
-        saved.setUser(u);
-
-        when(traineeService.create(any(Trainee.class), eq("John"), eq("Smith"), eq(true)))
-                .thenReturn(saved);
-
-        var body = new TraineeRegistrationRequest();
-        body.setFirstName("John");
-        body.setLastName("Smith");
-        body.setAddress("Main St 1");
-        body.setDateOfBirth(LocalDate.parse("2000-05-05"));
-
-        mockMvc.perform(post("/api/trainees/register")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(om.writeValueAsBytes(body)))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.username").value("john.smith"))
-                .andExpect(jsonPath("$.password").value("rawPw123"));
-    }
-
-    @Test
-    void getProfile_ok() throws Exception {
-        var u = new User();
-        u.setUsername("trainee.1");
+        User u = new User();
+        u.setUsername("john.doe");
+        u.setPlainPassword("p@ss123456");
         u.setFirstName("John");
-        u.setLastName("Smith");
+        u.setLastName("Doe");
         u.setActive(true);
 
-        var t = new Trainee();
-        t.setUser(u);
-        t.setDateOfBirth(LocalDate.parse("2000-05-05"));
-        t.setAddress("Main");
-        // include one trainer to test mapping
-        var trU = new User(); trU.setUsername("trainer.1"); trU.setFirstName("Jane"); trU.setLastName("Doe");
-        var tr = new Trainer(); tr.setUser(trU); tr.setSpecialization("Cardio");
-        t.setTrainers((java.util.Set<Trainer>) List.of(tr));
+        Trainee saved = new Trainee();
+        saved.setId(1L);
+        saved.setUser(u);
 
-        when(traineeService.getByUsername(any(Credentials.class), eq("trainee.1"))).thenReturn(t);
+        when(traineeService.create(any(Trainee.class), eq("John"), eq("Doe"), eq(true)))
+                .thenReturn(saved);
 
-        mockMvc.perform(get("/api/trainees/{u}", "trainee.1").with(user("trainee.1")))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.username").value("trainee.1"))
-                .andExpect(jsonPath("$.firstName").value("John"))
-                .andExpect(jsonPath("$.trainers[0].username").value("trainer.1"))
-                .andExpect(jsonPath("$.trainers[0].specialization").value("Cardio"));
+        RegistrationResponse res = controller.register(req);
+
+        assertEquals("john.doe", res.getUsername());
+        assertEquals("p@ss123456", res.getPassword());
+        verify(traineeService, times(1)).create(any(Trainee.class), eq("John"), eq("Doe"), eq(true));
     }
 
     @Test
-    void setTrainers_ok() throws Exception {
-        var body = new UpdateTraineeTrainersRequest();
-        body.setTrainers(List.of("trainer.1", "trainer.2"));
+    void getProfile_mapsResponse() {
+        Trainee t = buildTrainee("john", "John", "Doe");
 
-        // service is void + later we fetch profile again
-        var u = new User(); u.setUsername("trainee.1"); u.setFirstName("John"); u.setLastName("Smith"); u.setActive(true);
-        var t = new Trainee(); t.setUser(u);
+        Trainer tr1 = buildTrainer("t1", "Ann", "Smith", "Yoga");
+        Trainer tr2 = buildTrainer("t2", "Bob", "Brown", "Crossfit");
 
-        when(traineeService.getByUsername(any(Credentials.class), eq("trainee.1"))).thenReturn(t);
+        t.getTrainers().addAll(List.of(tr1, tr2));
 
-        mockMvc.perform(put("/api/trainees/{u}/trainers", "trainee.1")
-                        .with(user("trainee.1"))
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(om.writeValueAsBytes(body)))
-                .andExpect(status().isOk());
+        when(traineeService.getByUsername("john")).thenReturn(t);
 
-        verify(traineeService).setTrainers(any(Credentials.class), eq("trainee.1"), eq(List.of("trainer.1", "trainer.2")));
+        TraineeProfileResponse res = controller.getProfile("john");
+
+        assertEquals("john", res.getUsername());
+        assertEquals("John", res.getFirstName());
+        assertEquals("Doe", res.getLastName());
+        assertEquals(2, res.getTrainers().size());
+        assertEquals("Yoga", res.getTrainers().get(0).getSpecialization());
+        assertEquals("Crossfit", res.getTrainers().get(1).getSpecialization());
+    }
+
+    @Test
+    void update_updatesProfileAndUserFields() {
+        String username = "john";
+
+        UpdateTraineeRequest body = new UpdateTraineeRequest();
+        body.setFirstName("NewFirst");
+        body.setLastName("NewLast");
+        body.setActive(false);
+        body.setAddress("New Address");
+        body.setDateOfBirth(LocalDate.of(1999, 12, 31));
+
+        Trainee current = buildTrainee(username, "OldFirst", "OldLast");
+        current.getUser().setActive(true);
+
+        Trainee updated = buildTrainee(username, "OldFirst", "OldLast");
+        updated.setAddress("New Address");
+        updated.setDateOfBirth(LocalDate.of(1999, 12, 31));
+        updated.getUser().setActive(true);
+
+        when(traineeService.updateProfile(eq(username), any(Trainee.class))).thenReturn(updated);
+        when(traineeService.getByUsername(username)).thenReturn(current);
+        when(traineeService.update(any(Trainee.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        TraineeProfileResponse res = controller.update(username, body);
+
+        assertEquals(username, res.getUsername());
+        assertEquals("NewFirst", res.getFirstName());
+        assertEquals("NewLast", res.getLastName());
+        assertEquals("New Address", res.getAddress());
+        assertEquals(LocalDate.of(1999, 12, 31), res.getDateOfBirth());
+        assertFalse(res.isActive());
+
+        verify(traineeService).updateProfile(eq(username), any(Trainee.class));
+        verify(traineeService).getByUsername(username);
+        verify(traineeService).update(any(Trainee.class));
+    }
+
+    @Test
+    void delete_callsService() {
+        controller.delete("john");
+        verify(traineeService).deleteByUsername("john");
+    }
+
+    @Test
+    void availableTrainers_mapsList() {
+        Trainer tr1 = buildTrainer("t1", "Ann", "Smith", "Yoga");
+        Trainer tr2 = buildTrainer("t2", "Bob", "Brown", "Crossfit");
+
+        when(trainerService.listNotAssignedToTrainee("john")).thenReturn(List.of(tr1, tr2));
+
+        TrainersListResponse res = controller.availableTrainers("john");
+
+        assertEquals(2, res.getItems().size());
+        assertEquals("t1", res.getItems().get(0).getUsername());
+        assertEquals("Yoga", res.getItems().get(0).getSpecialization());
+        assertEquals("t2", res.getItems().get(1).getUsername());
+    }
+
+    @Test
+    void setTrainers_callsServiceAndReturnsUpdatedList() {
+        UpdateTraineeTrainersRequest req = new UpdateTraineeTrainersRequest();
+        req.setTrainers(List.of("t1", "t2"));
+
+        Trainee me = buildTrainee("john", "John", "Doe");
+        me.getTrainers().add(buildTrainer("t1", "Ann", "Smith", "Yoga"));
+        me.getTrainers().add(buildTrainer("t2", "Bob", "Brown", "Crossfit"));
+
+        doNothing().when(traineeService).setTrainers("john", List.of("t1", "t2"));
+        when(traineeService.getByUsername("john")).thenReturn(me);
+
+        TrainersListResponse res = controller.setTrainers("john", req);
+
+        verify(traineeService).setTrainers("john", List.of("t1", "t2"));
+        verify(traineeService).getByUsername("john");
+
+        assertEquals(2, res.getItems().size());
+        assertEquals("t1", res.getItems().get(0).getUsername());
+        assertEquals("t2", res.getItems().get(1).getUsername());
+    }
+
+    // --- helpers ---
+
+    private static Trainee buildTrainee(String username, String first, String last) {
+        User u = new User();
+        u.setUsername(username);
+        u.setFirstName(first);
+        u.setLastName(last);
+        u.setActive(true);
+
+        Trainee t = new Trainee();
+        t.setUser(u);
+        return t;
+    }
+
+    private static Trainer buildTrainer(String username, String first, String last, String specialization) {
+        User u = new User();
+        u.setUsername(username);
+        u.setFirstName(first);
+        u.setLastName(last);
+        u.setActive(true);
+
+        Trainer tr = new Trainer();
+        tr.setUser(u);
+        tr.setSpecialization(specialization); // IMPORTANT: always String
+        return tr;
     }
 }

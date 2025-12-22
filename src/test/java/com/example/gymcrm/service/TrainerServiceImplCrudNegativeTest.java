@@ -5,6 +5,8 @@ import com.example.gymcrm.dao.UserDao;
 import com.example.gymcrm.entity.Trainer;
 import com.example.gymcrm.exceptions.NotFoundException;
 import com.example.gymcrm.service.impl.TrainerServiceImpl;
+import com.example.gymcrm.util.PasswordGenerator;
+import com.example.gymcrm.util.UsernameGenerator;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -18,21 +20,37 @@ import static org.mockito.Mockito.*;
 class TrainerServiceImplCrudNegativeTest {
 
     private TrainerDao trainerDao;
+    private UserDao userDao;
+    private UsernameGenerator usernameGenerator;
+    private PasswordGenerator passwordGenerator;
+    private PasswordEncoder passwordEncoder;
     private TrainerServiceImpl service;
 
     @BeforeEach
-    void setup() {
+    void setUp() {
         trainerDao = mock(TrainerDao.class);
-        var userDao = mock(UserDao.class);
-        var encoder = mock(PasswordEncoder.class);
-        service = new TrainerServiceImpl(trainerDao, userDao,
-                null, null, new SimpleMeterRegistry(), encoder);
+        userDao = mock(UserDao.class);
+        usernameGenerator = mock(UsernameGenerator.class);
+        passwordGenerator = mock(PasswordGenerator.class);
+        passwordEncoder = mock(PasswordEncoder.class);
+
+        service = new TrainerServiceImpl(
+                trainerDao,
+                userDao,
+                usernameGenerator,
+                passwordGenerator,
+                new SimpleMeterRegistry(),
+                passwordEncoder
+        );
     }
 
     @Test
     void update_notFound() {
-        var t = new Trainer(); t.setId(7L);
-        when(trainerDao.findById(7L)).thenReturn(Optional.empty());
+        Trainer t = new Trainer();
+        t.setId(2L);
+
+        when(trainerDao.findById(2L)).thenReturn(Optional.empty());
+
         assertThrows(NotFoundException.class, () -> service.update(t));
     }
 }

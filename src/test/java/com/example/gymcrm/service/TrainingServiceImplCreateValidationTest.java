@@ -16,38 +16,58 @@ import static org.mockito.Mockito.*;
 class TrainingServiceImplCreateValidationTest {
 
     private TrainingDao trainingDao;
-    private TrainingTypeDao typeDao;
+    private TrainingTypeDao trainingTypeDao;
     private TraineeDao traineeDao;
     private TrainerDao trainerDao;
-    private TrainingServiceImpl svc;
+    private TrainingServiceImpl service;
 
     @BeforeEach
-    void setup() {
+    void setUp() {
         trainingDao = mock(TrainingDao.class);
-        typeDao = mock(TrainingTypeDao.class);
+        trainingTypeDao = mock(TrainingTypeDao.class);
         traineeDao = mock(TraineeDao.class);
         trainerDao = mock(TrainerDao.class);
 
-        svc = new TrainingServiceImpl(trainingDao, typeDao, traineeDao, trainerDao,
-                new SimpleMeterRegistry());
+        service = new TrainingServiceImpl(
+                trainingDao,
+                trainingTypeDao,
+                traineeDao,
+                trainerDao,
+                new SimpleMeterRegistry()
+        );
     }
 
     @Test
-    void create_throws_when_type_missing() {
-        var tr = new Training();
-        tr.setTrainingType(new TrainingType()); tr.getTrainingType().setName("Yoga");
-        tr.setTrainee(new Trainee()); tr.getTrainee().setId(1L);
-        tr.setTrainer(new Trainer()); tr.getTrainer().setId(2L);
+    void create_missingTypeName_throws() {
+        Training tr = new Training();
+        tr.setTrainingType(new TrainingType()); // name null
 
-        when(typeDao.findByName("Yoga")).thenReturn(Optional.empty());
-
-        assertThrows(NotFoundException.class, () -> svc.create(tr));
+        assertThrows(NotFoundException.class, () -> service.create(tr));
     }
 
     @Test
-    void create_throws_when_refs_missing() {
-        var tr = new Training();
-        // no ids set for trainee/trainer
-        assertThrows(NotFoundException.class, () -> svc.create(tr));
+    void create_missingTrainee_throws() {
+        Training tr = new Training();
+        TrainingType type = new TrainingType(); type.setName("Yoga");
+        tr.setTrainingType(type);
+        when(trainingTypeDao.findByName("Yoga")).thenReturn(Optional.of(new TrainingType()));
+
+        tr.setTrainer(new Trainer());
+        tr.getTrainer().setId(1L);
+
+        assertThrows(NotFoundException.class, () -> service.create(tr));
+    }
+
+    @Test
+    void create_missingTrainer_throws() {
+        Training tr = new Training();
+        TrainingType type = new TrainingType(); type.setName("Yoga");
+        tr.setTrainingType(type);
+        when(trainingTypeDao.findByName("Yoga")).thenReturn(Optional.of(new TrainingType()));
+
+        tr.setTrainee(new Trainee());
+        tr.getTrainee().setId(2L);
+
+        assertThrows(NotFoundException.class, () -> service.create(tr));
     }
 }

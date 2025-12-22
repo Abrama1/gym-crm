@@ -6,38 +6,63 @@ import com.example.gymcrm.dao.UserDao;
 import com.example.gymcrm.entity.Trainee;
 import com.example.gymcrm.entity.User;
 import com.example.gymcrm.service.impl.TraineeServiceImpl;
+import com.example.gymcrm.util.PasswordGenerator;
+import com.example.gymcrm.util.UsernameGenerator;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.security.crypto.password.PasswordEncoder;
 
 import java.time.LocalDate;
+import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.Mockito.*;
 
 class TraineeServiceImplUpdatePositiveTest {
 
+    private TraineeDao traineeDao;
+    private TrainerDao trainerDao;
+    private UserDao userDao;
+    private UsernameGenerator usernameGenerator;
+    private PasswordGenerator passwordGenerator;
+    private PasswordEncoder passwordEncoder;
+    private TraineeServiceImpl service;
+
+    @BeforeEach
+    void setUp() {
+        traineeDao = mock(TraineeDao.class);
+        trainerDao = mock(TrainerDao.class);
+        userDao = mock(UserDao.class);
+        usernameGenerator = mock(UsernameGenerator.class);
+        passwordGenerator = mock(PasswordGenerator.class);
+        passwordEncoder = mock(PasswordEncoder.class);
+
+        service = new TraineeServiceImpl(
+                traineeDao, trainerDao, userDao,
+                usernameGenerator, passwordGenerator,
+                new SimpleMeterRegistry(), passwordEncoder
+        );
+    }
+
     @Test
-    void updateProfile_updates_fields() {
-        var traineeDao = mock(TraineeDao.class);
-        var trainerDao = mock(TrainerDao.class);
-        var userDao = mock(UserDao.class);
-        var encoder = mock(PasswordEncoder.class);
+    void updateProfile_ok() {
+        User u = new User();
+        u.setUsername("alice");
 
-        var me = new Trainee(); me.setUser(new User());
-        when(traineeDao.findByUsername("me")).thenReturn(java.util.Optional.of(me));
-        when(traineeDao.save(any(Trainee.class))).thenAnswer(inv -> inv.getArgument(0));
+        Trainee me = new Trainee();
+        me.setUser(u);
 
-        var service = new TraineeServiceImpl(traineeDao, trainerDao, userDao,
-                null, null, new SimpleMeterRegistry(), encoder);
+        when(traineeDao.findByUsername("alice")).thenReturn(Optional.of(me));
+        when(traineeDao.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
 
-        var patch = new Trainee();
-        patch.setAddress("New Addr");
-        patch.setDateOfBirth(LocalDate.of(2000,5,5));
+        Trainee patch = new Trainee();
+        patch.setAddress("New Address");
+        patch.setDateOfBirth(LocalDate.of(2000, 1, 1));
 
-        var saved = service.updateProfile(new com.example.gymcrm.dto.Credentials("me","x"), patch);
+        Trainee out = service.updateProfile("alice", patch);
 
-        assertEquals("New Addr", saved.getAddress());
-        assertEquals(LocalDate.of(2000,5,5), saved.getDateOfBirth());
+        assertEquals("New Address", out.getAddress());
+        assertEquals(LocalDate.of(2000, 1, 1), out.getDateOfBirth());
     }
 }
