@@ -8,6 +8,12 @@
 > Features JWT-based authentication, Spring Security, Micrometer metrics, and role-based authorization.
 
 ---
+- **gym-crm (main service)**
+
+- **discovery-server (Eureka)**
+
+- **workload-service (trainer workload microservice)**
+---
 
 ## 🚀 Features
 
