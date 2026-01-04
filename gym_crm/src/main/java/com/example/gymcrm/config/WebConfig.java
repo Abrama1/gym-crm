@@ -1,4 +1,4 @@
-package com.example.gymcrm.web;
+package com.example.gymcrm.config;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;

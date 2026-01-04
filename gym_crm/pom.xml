@@ -18,6 +18,7 @@
     <modules>
         <module>discovery-server</module>
         <module>workload-service</module>
+        <module>gym_crm</module>
     </modules>
 
     <properties>
