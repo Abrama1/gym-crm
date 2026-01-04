@@ -1,6 +1,7 @@
 package com.example.workload.api;
 
 import com.example.workload.dto.MonthSummaryResponse;
+import com.example.workload.dto.TrainerWorkloadResponse;
 import com.example.workload.dto.WorkloadEventRequest;
 import com.example.workload.entity.WorkloadSummary;
 import com.example.workload.service.WorkloadService;
@@ -39,9 +40,15 @@ public class WorkloadController {
         return ResponseEntity.ok(new MonthSummaryResponse(trainerUsername, year, month, total));
     }
 
-    // 3) Get all months (flat list) for a trainer (we'll later transform to Years->Months model)
-    @GetMapping("/{trainerUsername}")
-    public ResponseEntity<List<WorkloadSummary>> all(@PathVariable String trainerUsername) {
+    // keep flat list for debugging
+    @GetMapping("/{trainerUsername}/flat")
+    public ResponseEntity<List<WorkloadSummary>> allFlat(@PathVariable String trainerUsername) {
         return ResponseEntity.ok(service.getAllMonths(trainerUsername));
+    }
+
+    // nested model
+    @GetMapping("/{trainerUsername}")
+    public ResponseEntity<TrainerWorkloadResponse> summary(@PathVariable String trainerUsername) {
+        return ResponseEntity.ok(service.getTrainerWorkload(trainerUsername));
     }
 }
