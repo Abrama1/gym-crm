@@ -55,6 +55,12 @@
             <artifactId>spring-cloud-starter-loadbalancer</artifactId>
         </dependency>
 
+        <!-- Feign client (service-to-service REST) -->
+        <dependency>
+            <groupId>org.springframework.cloud</groupId>
+            <artifactId>spring-cloud-starter-openfeign</artifactId>
+        </dependency>
+
         <!-- Circuit Breaker (Resilience4j) -->
         <dependency>
             <groupId>org.springframework.cloud</groupId>
