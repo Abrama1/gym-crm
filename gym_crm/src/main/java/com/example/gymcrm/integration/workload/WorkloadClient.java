@@ -4,7 +4,11 @@ import org.springframework.cloud.openfeign.FeignClient;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 
-@FeignClient(name = "workload-service", path = "/api/workloads")
+@FeignClient(
+        name = "workload-service",
+        path = "/api/workloads",
+        configuration = WorkloadFeignConfig.class
+)
 public interface WorkloadClient {
 
     @PostMapping("/events")
