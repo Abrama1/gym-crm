@@ -42,11 +42,19 @@ management:
     tags:
       application: ${spring.application.name}
 
+# --- Eureka Discovery Client ---
+eureka:
+  client:
+    service-url:
+      defaultZone: ${EUREKA_URL:http://localhost:8761/eureka}
+    register-with-eureka: true
+    fetch-registry: true
+
 # --- Security / JWT / Brute-force ---
 security:
   jwt:
     issuer: gym-crm
-    secret: ${JWT_SECRET:change-me-in-dev}   # set JWT_SECRET in env for non-local
+    secret: ${JWT_SECRET:change-me-in-dev}
     ttl-minutes: 60
   brute-force:
     max-attempts: 3
