@@ -46,25 +46,30 @@ public class TrainingServiceImpl implements TrainingService {
         this.workloadClient = workloadClient;
 
         this.trainingCreatedCounter = registry.counter("gymcrm.trainings.created");
-        this.listForTraineeTimer   = registry.timer("gymcrm.trainings.list", "side", "trainee");
-        this.listForTrainerTimer   = registry.timer("gymcrm.trainings.list", "side", "trainer");
+        this.listForTraineeTimer = registry.timer("gymcrm.trainings.list", "side", "trainee");
+        this.listForTrainerTimer = registry.timer("gymcrm.trainings.list", "side", "trainer");
     }
 
     @Override
     public Training create(Training training) {
         String typeName = training.getTrainingType() != null ? training.getTrainingType().getName() : null;
-        if (typeName == null || trainingTypeDao.findByName(typeName).isEmpty())
+        if (typeName == null || trainingTypeDao.findByName(typeName).isEmpty()) {
             throw new NotFoundException("Training type not found: " + typeName);
+        }
 
-        if (training.getTrainee() == null || training.getTrainee().getId() == null)
+        if (training.getTrainee() == null || training.getTrainee().getId() == null) {
             throw new NotFoundException("Trainee reference required");
-        if (training.getTrainer() == null || training.getTrainer().getId() == null)
+        }
+        if (training.getTrainer() == null || training.getTrainer().getId() == null) {
             throw new NotFoundException("Trainer reference required");
+        }
 
         Trainee tt = traineeDao.findById(training.getTrainee().getId())
                 .orElseThrow(() -> new NotFoundException("Trainee not found"));
+
         Trainer trn = trainerDao.findById(training.getTrainer().getId())
                 .orElseThrow(() -> new NotFoundException("Trainer not found"));
+
         TrainingType ttype = trainingTypeDao.findByName(typeName)
                 .orElseThrow(() -> new NotFoundException("Training type not found"));
 
@@ -76,7 +81,6 @@ public class TrainingServiceImpl implements TrainingService {
         trainingCreatedCounter.increment();
         log.info("Created training id={} name={}", saved.getId(), saved.getTrainingName());
 
-        // publish to workload-service (ADD)
         WorkloadEventRequest ev = new WorkloadEventRequest();
         ev.setTrainerUsername(trn.getUser().getUsername());
         ev.setTrainerFirstName(trn.getUser().getFirstName());
@@ -93,16 +97,21 @@ public class TrainingServiceImpl implements TrainingService {
 
     @Override
     @Transactional(readOnly = true)
-    public Optional<Training> getById(Long id){ return trainingDao.findById(id); }
+    public Optional<Training> getById(Long id) {
+        return trainingDao.findById(id);
+    }
 
     @Override
     @Transactional(readOnly = true)
-    public List<Training> list(){ return new ArrayList<>(trainingDao.findAll()); }
+    public List<Training> list() {
+        return new ArrayList<>(trainingDao.findAll());
+    }
 
     @Override
     @Transactional(readOnly = true)
     public List<Training> listForTrainee(String traineeUsername, TrainingCriteria c) {
         String nameLike = (c.getOtherPartyNameLike() == null) ? null : c.getOtherPartyNameLike().toLowerCase();
+
         return listForTraineeTimer.record(() ->
                 new ArrayList<>(trainingDao.listForTrainee(
                         traineeUsername, c.getFrom(), c.getTo(), nameLike, c.getTrainingType()
@@ -114,6 +123,7 @@ public class TrainingServiceImpl implements TrainingService {
     @Transactional(readOnly = true)
     public List<Training> listForTrainer(String trainerUsername, TrainingCriteria c) {
         String nameLike = (c.getOtherPartyNameLike() == null) ? null : c.getOtherPartyNameLike().toLowerCase();
+
         return listForTrainerTimer.record(() ->
                 new ArrayList<>(trainingDao.listForTrainer(
                         trainerUsername, c.getFrom(), c.getTo(), nameLike, c.getTrainingType()
