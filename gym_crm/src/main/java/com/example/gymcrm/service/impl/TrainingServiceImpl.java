@@ -2,13 +2,16 @@ package com.example.gymcrm.service.impl;
 
 import com.example.gymcrm.dao.*;
 import com.example.gymcrm.dto.TrainingCriteria;
+import com.example.gymcrm.dto.WorkloadEventRequest;
 import com.example.gymcrm.entity.*;
 import com.example.gymcrm.exceptions.NotFoundException;
+import com.example.gymcrm.integration.WorkloadServiceClient;
 import com.example.gymcrm.service.TrainingService;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Timer;
-import org.slf4j.Logger; import org.slf4j.LoggerFactory;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -17,12 +20,14 @@ import java.util.*;
 @Service
 @Transactional
 public class TrainingServiceImpl implements TrainingService {
+
     private static final Logger log = LoggerFactory.getLogger(TrainingServiceImpl.class);
 
     private final TrainingDao trainingDao;
     private final TrainingTypeDao trainingTypeDao;
     private final TraineeDao traineeDao;
     private final TrainerDao trainerDao;
+    private final WorkloadServiceClient workloadClient;
 
     private final Counter trainingCreatedCounter;
     private final Timer listForTraineeTimer;
@@ -32,11 +37,13 @@ public class TrainingServiceImpl implements TrainingService {
                                TrainingTypeDao trainingTypeDao,
                                TraineeDao traineeDao,
                                TrainerDao trainerDao,
-                               MeterRegistry registry) {
+                               MeterRegistry registry,
+                               WorkloadServiceClient workloadClient) {
         this.trainingDao = trainingDao;
         this.trainingTypeDao = trainingTypeDao;
         this.traineeDao = traineeDao;
         this.trainerDao = trainerDao;
+        this.workloadClient = workloadClient;
 
         this.trainingCreatedCounter = registry.counter("gymcrm.trainings.created");
         this.listForTraineeTimer   = registry.timer("gymcrm.trainings.list", "side", "trainee");
@@ -68,16 +75,32 @@ public class TrainingServiceImpl implements TrainingService {
         Training saved = trainingDao.save(training);
         trainingCreatedCounter.increment();
         log.info("Created training id={} name={}", saved.getId(), saved.getTrainingName());
+
+        // publish to workload-service (ADD)
+        WorkloadEventRequest ev = new WorkloadEventRequest();
+        ev.setTrainerUsername(trn.getUser().getUsername());
+        ev.setTrainerFirstName(trn.getUser().getFirstName());
+        ev.setTrainerLastName(trn.getUser().getLastName());
+        ev.setActive(trn.getUser().isActive());
+        ev.setTrainingDate(saved.getTrainingDate().toLocalDate());
+        ev.setTrainingDurationMinutes(saved.getDurationMinutes());
+        ev.setActionType("ADD");
+
+        workloadClient.sendEvent(ev);
+
         return saved;
     }
 
-    @Override @Transactional(readOnly = true)
+    @Override
+    @Transactional(readOnly = true)
     public Optional<Training> getById(Long id){ return trainingDao.findById(id); }
 
-    @Override @Transactional(readOnly = true)
+    @Override
+    @Transactional(readOnly = true)
     public List<Training> list(){ return new ArrayList<>(trainingDao.findAll()); }
 
-    @Override @Transactional(readOnly = true)
+    @Override
+    @Transactional(readOnly = true)
     public List<Training> listForTrainee(String traineeUsername, TrainingCriteria c) {
         String nameLike = (c.getOtherPartyNameLike() == null) ? null : c.getOtherPartyNameLike().toLowerCase();
         return listForTraineeTimer.record(() ->
@@ -87,7 +110,8 @@ public class TrainingServiceImpl implements TrainingService {
         );
     }
 
-    @Override @Transactional(readOnly = true)
+    @Override
+    @Transactional(readOnly = true)
     public List<Training> listForTrainer(String trainerUsername, TrainingCriteria c) {
         String nameLike = (c.getOtherPartyNameLike() == null) ? null : c.getOtherPartyNameLike().toLowerCase();
         return listForTrainerTimer.record(() ->
