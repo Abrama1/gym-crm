@@ -8,6 +8,7 @@
         <groupId>com.example</groupId>
         <artifactId>gym-crm</artifactId>
         <version>1.0.0</version>
+        <relativePath>../pom.xml</relativePath>
     </parent>
 
     <artifactId>gym_crm</artifactId>
