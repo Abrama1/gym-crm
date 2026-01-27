@@ -19,6 +19,10 @@ spring:
     console:
       enabled: true
       path: /h2
+  activemq:
+    broker-url: ${ACTIVEMQ_BROKER_URL:tcp://localhost:61616}
+    user: ${ACTIVEMQ_USER:admin}
+    password: ${ACTIVEMQ_PASSWORD:admin}
 
 eureka:
   client:
@@ -30,3 +34,8 @@ management:
     web:
       exposure:
         include: health,info
+
+workload:
+  queue:
+    events: ${WORKLOAD_EVENTS_QUEUE:workload.events}
+    dlq: ${WORKLOAD_EVENTS_DLQ:workload.events.dlq}

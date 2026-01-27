@@ -60,6 +60,12 @@
             <artifactId>spring-boot-starter-actuator</artifactId>
         </dependency>
 
+        <!-- ActiveMQ (JMS) -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-activemq</artifactId>
+        </dependency>
+
         <!-- In-memory DB + JPA -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
