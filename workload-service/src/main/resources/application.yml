@@ -23,6 +23,9 @@ spring:
     broker-url: ${ACTIVEMQ_BROKER_URL:tcp://localhost:61616}
     user: ${ACTIVEMQ_USER:admin}
     password: ${ACTIVEMQ_PASSWORD:admin}
+  data:
+    mongodb:
+      uri: ${MONGODB_URI:mongodb://localhost:27017/workload_db}
 
 eureka:
   client:
@@ -39,3 +42,7 @@ workload:
   queue:
     events: ${WORKLOAD_EVENTS_QUEUE:workload.events}
     dlq: ${WORKLOAD_EVENTS_DLQ:workload.events.dlq}
+
+logging:
+  pattern:
+    level: "%5p [tx:%X{txId}]"
