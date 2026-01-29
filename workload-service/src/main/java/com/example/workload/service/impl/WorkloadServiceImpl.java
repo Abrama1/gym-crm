@@ -3,116 +3,168 @@ package com.example.workload.service.impl;
 import com.example.workload.dto.ActionType;
 import com.example.workload.dto.TrainerWorkloadResponse;
 import com.example.workload.dto.WorkloadEventRequest;
-import com.example.workload.entity.WorkloadSummary;
-import com.example.workload.entity.WorkloadSummaryId;
-import com.example.workload.repo.WorkloadSummaryRepository;
+import com.example.workload.mongo.TrainerWorkloadDocument;
+import com.example.workload.mongo.TrainerWorkloadRepository;
 import com.example.workload.service.WorkloadService;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.slf4j.MDC;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
+import org.springframework.util.StringUtils;
 
-import java.util.*;
+import java.time.LocalDate;
+import java.util.Comparator;
 
 @Service
-@Transactional
 public class WorkloadServiceImpl implements WorkloadService {
 
-    private final WorkloadSummaryRepository repo;
+    private static final Logger log = LoggerFactory.getLogger(WorkloadServiceImpl.class);
 
-    public WorkloadServiceImpl(WorkloadSummaryRepository repo) {
+    private final TrainerWorkloadRepository repo;
+
+    public WorkloadServiceImpl(TrainerWorkloadRepository repo) {
         this.repo = repo;
     }
 
     @Override
     public void applyEvent(WorkloadEventRequest req) {
-        int year = req.getTrainingDate().getYear();
-        int month = req.getTrainingDate().getMonthValue();
+        validate(req);
 
-        WorkloadSummaryId id = new WorkloadSummaryId(req.getTrainerUsername(), year, month);
+        String txId = MDC.get("txId");
+        LocalDate d = req.getTrainingDate();
 
-        WorkloadSummary row = repo.findById(id).orElseGet(() -> {
-            WorkloadSummary ws = new WorkloadSummary();
-            ws.setId(id);
-            ws.setTotalMinutes(0);
-            return ws;
-        });
+        int year = d.getYear();
+        int month = d.getMonthValue();
+        int delta = req.getTrainingDurationMinutes();
 
-        // refresh trainer info
-        row.setTrainerFirstName(req.getTrainerFirstName());
-        row.setTrainerLastName(req.getTrainerLastName());
-        row.setActive(Boolean.TRUE.equals(req.getActive()));
+        if (req.getActionType() == ActionType.DELETE) {
+            delta = -delta;
+        }
 
-        int delta = req.getTrainingDurationMinutes() != null ? req.getTrainingDurationMinutes() : 0;
-        if (req.getActionType() == ActionType.DELETE) delta = -delta;
+        TrainerWorkloadDocument doc = repo.findById(req.getTrainerUsername())
+                .orElseGet(() -> {
+                    TrainerWorkloadDocument n = new TrainerWorkloadDocument();
+                    n.setTrainerUsername(req.getTrainerUsername());
+                    n.setTrainerFirstName(req.getTrainerFirstName());
+                    n.setTrainerLastName(req.getTrainerLastName());
+                    n.setActive(Boolean.TRUE.equals(req.getActive()));
+                    return n;
+                });
 
-        int updated = row.getTotalMinutes() + delta;
-        if (updated < 0) updated = 0;
+        // keep trainer profile info up to date
+        doc.setTrainerFirstName(req.getTrainerFirstName());
+        doc.setTrainerLastName(req.getTrainerLastName());
+        doc.setActive(Boolean.TRUE.equals(req.getActive()));
 
-        row.setTotalMinutes(updated);
-        repo.save(row);
+        TrainerWorkloadDocument.YearEntry y = doc.getYears().stream()
+                .filter(e -> e.getYear() == year)
+                .findFirst()
+                .orElseGet(() -> {
+                    TrainerWorkloadDocument.YearEntry ny = new TrainerWorkloadDocument.YearEntry(year);
+                    doc.getYears().add(ny);
+                    return ny;
+                });
+
+        TrainerWorkloadDocument.MonthEntry m = y.getMonths().stream()
+                .filter(e -> e.getMonth() == month)
+                .findFirst()
+                .orElseGet(() -> {
+                    TrainerWorkloadDocument.MonthEntry nm = new TrainerWorkloadDocument.MonthEntry(month, 0);
+                    y.getMonths().add(nm);
+                    return nm;
+                });
+
+        int before = m.getTrainingSummaryDurationMinutes();
+        int after = before + delta;
+        if (after < 0) after = 0; // safety: never negative
+
+        m.setTrainingSummaryDurationMinutes(after);
+
+        // sort for stable output
+        doc.getYears().sort(Comparator.comparingInt(TrainerWorkloadDocument.YearEntry::getYear));
+        y.getMonths().sort(Comparator.comparingInt(TrainerWorkloadDocument.MonthEntry::getMonth));
+
+        repo.save(doc);
+
+        log.info("tx={} workload applied trainer={} action={} {}-{} before={} after={}",
+                txId,
+                req.getTrainerUsername(),
+                req.getActionType(),
+                year, month,
+                before, after
+        );
     }
 
     @Override
-    @Transactional(readOnly = true)
-    public WorkloadSummary getMonth(String trainerUsername, int year, int month) {
-        WorkloadSummaryId id = new WorkloadSummaryId(trainerUsername, year, month);
-        return repo.findById(id).orElse(null);
+    public int getMonthMinutes(String trainerUsername, int year, int month) {
+        TrainerWorkloadDocument doc = repo.findById(trainerUsername).orElse(null);
+        if (doc == null) return 0;
+
+        return doc.getYears().stream()
+                .filter(y -> y.getYear() == year)
+                .flatMap(y -> y.getMonths().stream())
+                .filter(m -> m.getMonth() == month)
+                .map(TrainerWorkloadDocument.MonthEntry::getTrainingSummaryDurationMinutes)
+                .findFirst()
+                .orElse(0);
     }
 
     @Override
-    @Transactional(readOnly = true)
-    public List<WorkloadSummary> getAllMonths(String trainerUsername) {
-        return repo.findByIdTrainerUsernameOrderByIdYearAscIdMonthAsc(trainerUsername);
-    }
-
-    @Override
-    @Transactional(readOnly = true)
     public TrainerWorkloadResponse getTrainerWorkload(String trainerUsername) {
-        List<WorkloadSummary> rows = getAllMonths(trainerUsername);
+        TrainerWorkloadDocument doc = repo.findById(trainerUsername).orElse(null);
+        if (doc == null) {
+            TrainerWorkloadResponse empty = new TrainerWorkloadResponse();
+            empty.setTrainerUsername(trainerUsername);
+            empty.setYears(java.util.List.of());
+            return empty;
+        }
 
         TrainerWorkloadResponse res = new TrainerWorkloadResponse();
-        res.setTrainerUsername(trainerUsername);
+        res.setTrainerUsername(doc.getTrainerUsername());
+        res.setTrainerFirstName(doc.getTrainerFirstName());
+        res.setTrainerLastName(doc.getTrainerLastName());
+        res.setActive(doc.isActive());
 
-        if (rows.isEmpty()) {
-            // unknown trainer (no data yet)
-            res.setTrainerFirstName(null);
-            res.setTrainerLastName(null);
-            res.setActive(false);
-            res.setYears(List.of());
-            return res;
-        }
+        var years = new java.util.ArrayList<TrainerWorkloadResponse.YearSummary>();
+        for (TrainerWorkloadDocument.YearEntry y : doc.getYears()) {
+            var yr = new TrainerWorkloadResponse.YearSummary();
+            yr.setYear(y.getYear());
 
-        // take identity fields from latest row (last element because ordered)
-        WorkloadSummary last = rows.get(rows.size() - 1);
-        res.setTrainerFirstName(last.getTrainerFirstName());
-        res.setTrainerLastName(last.getTrainerLastName());
-        res.setActive(last.isActive());
-
-        // group by year
-        Map<Integer, List<WorkloadSummary>> byYear = new LinkedHashMap<>();
-        for (WorkloadSummary r : rows) {
-            byYear.computeIfAbsent(r.getId().getYear(), y -> new ArrayList<>()).add(r);
-        }
-
-        List<TrainerWorkloadResponse.YearSummary> years = new ArrayList<>();
-        for (var entry : byYear.entrySet()) {
-            int year = entry.getKey();
-            var yearDto = new TrainerWorkloadResponse.YearSummary(year);
-
-            // months inside year are already ordered by repository method, but keeps it safe:
-            entry.getValue().sort(Comparator.comparingInt(o -> o.getId().getMonth()));
-
-            List<TrainerWorkloadResponse.MonthSummary> months = new ArrayList<>();
-            for (WorkloadSummary r : entry.getValue()) {
+            var months = new java.util.ArrayList<TrainerWorkloadResponse.MonthSummary>();
+            for (TrainerWorkloadDocument.MonthEntry m : y.getMonths()) {
                 months.add(new TrainerWorkloadResponse.MonthSummary(
-                        r.getId().getMonth(),
-                        r.getTotalMinutes()
+                        m.getMonth(),
+                        m.getTrainingSummaryDurationMinutes()
                 ));
             }
-            yearDto.setMonths(months);
-            years.add(yearDto);
+            yr.setMonths(months);
+            years.add(yr);
         }
-
         res.setYears(years);
         return res;
+    }
+
+    private void validate(WorkloadEventRequest req) {
+        if (!StringUtils.hasText(req.getTrainerUsername())) {
+            throw new IllegalArgumentException("trainerUsername is required");
+        }
+        if (!StringUtils.hasText(req.getTrainerFirstName())) {
+            throw new IllegalArgumentException("trainerFirstName is required");
+        }
+        if (!StringUtils.hasText(req.getTrainerLastName())) {
+            throw new IllegalArgumentException("trainerLastName is required");
+        }
+        if (req.getActive() == null) {
+            throw new IllegalArgumentException("active is required");
+        }
+        if (req.getTrainingDate() == null) {
+            throw new IllegalArgumentException("trainingDate is required");
+        }
+        if (req.getTrainingDurationMinutes() == null || req.getTrainingDurationMinutes() <= 0) {
+            throw new IllegalArgumentException("trainingDurationMinutes must be positive");
+        }
+        if (req.getActionType() == null) {
+            throw new IllegalArgumentException("actionType is required");
+        }
     }
 }
