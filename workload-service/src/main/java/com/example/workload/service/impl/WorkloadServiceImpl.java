@@ -35,11 +35,20 @@ public class WorkloadServiceImpl implements WorkloadService {
 
         int year = d.getYear();
         int month = d.getMonthValue();
-        int delta = req.getTrainingDurationMinutes();
 
+        int delta = req.getTrainingDurationMinutes();
         if (req.getActionType() == ActionType.DELETE) {
             delta = -delta;
         }
+
+        // transaction-level log (start)
+        log.info("tx={} workload event received trainer={} action={} date={} duration={}",
+                txId,
+                req.getTrainerUsername(),
+                req.getActionType(),
+                req.getTrainingDate(),
+                req.getTrainingDurationMinutes()
+        );
 
         TrainerWorkloadDocument doc = repo.findById(req.getTrainerUsername())
                 .orElseGet(() -> {
@@ -76,20 +85,22 @@ public class WorkloadServiceImpl implements WorkloadService {
 
         int before = m.getTrainingSummaryDurationMinutes();
         int after = before + delta;
-        if (after < 0) after = 0; // safety: never negative
+        if (after < 0) after = 0; // never negative
 
         m.setTrainingSummaryDurationMinutes(after);
 
-        // sort for stable output
+        // stable ordering for deterministic output
         doc.getYears().sort(Comparator.comparingInt(TrainerWorkloadDocument.YearEntry::getYear));
-        y.getMonths().sort(Comparator.comparingInt(TrainerWorkloadDocument.MonthEntry::getMonth));
+        for (TrainerWorkloadDocument.YearEntry ye : doc.getYears()) {
+            ye.getMonths().sort(Comparator.comparingInt(TrainerWorkloadDocument.MonthEntry::getMonth));
+        }
 
         repo.save(doc);
 
-        log.info("tx={} workload applied trainer={} action={} {}-{} before={} after={}",
+        // operation-level log (end)
+        log.info("tx={} workload updated trainer={} {}-{} before={} after={}",
                 txId,
                 req.getTrainerUsername(),
-                req.getActionType(),
                 year, month,
                 before, after
         );

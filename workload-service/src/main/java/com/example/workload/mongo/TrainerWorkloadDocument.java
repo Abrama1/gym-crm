@@ -2,27 +2,28 @@ package com.example.workload.mongo;
 
 import org.springframework.data.annotation.Id;
 import org.springframework.data.mongodb.core.index.CompoundIndex;
-import org.springframework.data.mongodb.core.index.Indexed;
 import org.springframework.data.mongodb.core.mapping.Document;
 
 import java.util.ArrayList;
 import java.util.List;
 
 @Document(collection = "trainer_workloads")
-@CompoundIndex(name = "idx_trainer_name", def = "{'trainerFirstName': 1, 'trainerLastName': 1}")
+@CompoundIndex(
+        name = "idx_trainer_first_last",
+        def = "{'trainerFirstName': 1, 'trainerLastName': 1}"
+)
 public class TrainerWorkloadDocument {
 
     @Id
-    private String trainerUsername; // use username as document id
+    private String trainerUsername;
 
-    @Indexed
     private String trainerFirstName;
-
-    @Indexed
     private String trainerLastName;
 
+    // Trainer Status
     private boolean active;
 
+    // Years List
     private List<YearEntry> years = new ArrayList<>();
 
     public String getTrainerUsername() { return trainerUsername; }
@@ -40,7 +41,7 @@ public class TrainerWorkloadDocument {
     public List<YearEntry> getYears() { return years; }
     public void setYears(List<YearEntry> years) { this.years = years; }
 
-    // ---- nested structure ----
+    // ---- nested entries ----
 
     public static class YearEntry {
         private int year;
@@ -58,7 +59,7 @@ public class TrainerWorkloadDocument {
 
     public static class MonthEntry {
         private int month; // 1..12
-        private int trainingSummaryDurationMinutes;
+        private int trainingSummaryDurationMinutes; // number type requirement
 
         public MonthEntry() {}
         public MonthEntry(int month, int minutes) {
