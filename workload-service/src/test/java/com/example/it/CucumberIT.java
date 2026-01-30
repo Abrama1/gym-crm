@@ -1,4 +1,4 @@
-package com.example.workload;
+package com.example.it;
 
 import org.junit.platform.suite.api.ConfigurationParameter;
 import org.junit.platform.suite.api.IncludeEngines;
