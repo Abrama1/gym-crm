@@ -19,11 +19,9 @@ import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 
 import java.time.LocalDate;
-import java.time.LocalDateTime;
 import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.*;
-import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -41,11 +39,6 @@ public class TrainingPublishSteps {
     @MockBean private WorkloadEventPublisher workloadPublisher;
 
     private int lastStatus = -1;
-
-    private String lastTrainerUsername;
-    private String lastAction;
-    private int lastDuration;
-    private LocalDate lastDate;
 
     private Trainee trainee;
     private Trainer trainer;
@@ -81,27 +74,27 @@ public class TrainingPublishSteps {
         type = new TrainingType();
         type.setName(typeName);
 
-        // Controller uses findByUsername to map request entities
+        // Controller uses findByUsername
         when(traineeDao.findByUsername(traineeUsername)).thenReturn(Optional.of(trainee));
         when(trainerDao.findByUsername(trainerUsername)).thenReturn(Optional.of(trainer));
 
-        // Service create() uses ids + training type validation
+        // Service uses ids + training type validation
         when(traineeDao.findById(101L)).thenReturn(Optional.of(trainee));
         when(trainerDao.findById(202L)).thenReturn(Optional.of(trainer));
         when(trainingTypeDao.findByName(typeName)).thenReturn(Optional.of(type));
 
-        // save returns entity (simulate id assign)
         when(trainingDao.save(any(Training.class))).thenAnswer(inv -> {
             Training t = inv.getArgument(0);
             t.setId(999L);
             return t;
         });
+
+        // reset publisher invocations between scenarios (safe)
+        clearInvocations(workloadPublisher);
     }
 
     @When("trainee {string} creates a training with trainer {string} type {string} duration {int} on date {string}")
     public void traineeCreatesTraining(String traineeUsername, String trainerUsername, String typeName, int duration, String date) throws Exception {
-        // TrainingController expects AddTrainingRequest:
-        // traineeUsername, trainerUsername, trainingName, trainingDate, trainingDuration, trainingType
         String json = """
                 {
                   "traineeUsername": "%s",
@@ -125,6 +118,85 @@ public class TrainingPublishSteps {
         lastStatus = res.getResponse().getStatus();
     }
 
+    @When("trainee {string} tries to create a training for traineeUsername {string} with trainer {string} type {string} duration {int} on date {string}")
+    public void traineeTriesForOtherTrainee(String authUser, String bodyTraineeUsername, String trainerUsername,
+                                            String typeName, int duration, String date) throws Exception {
+
+        String json = """
+                {
+                  "traineeUsername": "%s",
+                  "trainerUsername": "%s",
+                  "trainingName": "Leg day",
+                  "trainingDate": "%s",
+                  "trainingDuration": %d,
+                  "trainingType": "%s"
+                }
+                """.formatted(bodyTraineeUsername, trainerUsername, date, duration, typeName);
+
+        var res = mvc.perform(
+                        post("/api/trainings")
+                                .with(user(authUser).roles("TRAINEE"))
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content(json)
+                )
+                .andExpect(status().isForbidden())
+                .andReturn();
+
+        lastStatus = res.getResponse().getStatus();
+    }
+
+    @When("trainer {string} creates a training with trainee {string} type {string} duration {int} on date {string}")
+    public void trainerCreatesTraining(String trainerUsername, String traineeUsername, String typeName, int duration, String date) throws Exception {
+        String json = """
+                {
+                  "traineeUsername": "%s",
+                  "trainerUsername": "%s",
+                  "trainingName": "Back day",
+                  "trainingDate": "%s",
+                  "trainingDuration": %d,
+                  "trainingType": "%s"
+                }
+                """.formatted(traineeUsername, trainerUsername, date, duration, typeName);
+
+        var res = mvc.perform(
+                        post("/api/trainings")
+                                .with(user(trainerUsername).roles("TRAINER"))
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content(json)
+                )
+                .andExpect(status().isOk())
+                .andReturn();
+
+        lastStatus = res.getResponse().getStatus();
+    }
+
+    @When("trainer {string} tries to create a training for trainerUsername {string} with trainee {string} type {string} duration {int} on date {string}")
+    public void trainerTriesForOtherTrainer(String authUser, String bodyTrainerUsername, String traineeUsername,
+                                            String typeName, int duration, String date) throws Exception {
+
+        String json = """
+                {
+                  "traineeUsername": "%s",
+                  "trainerUsername": "%s",
+                  "trainingName": "Back day",
+                  "trainingDate": "%s",
+                  "trainingDuration": %d,
+                  "trainingType": "%s"
+                }
+                """.formatted(traineeUsername, bodyTrainerUsername, date, duration, typeName);
+
+        var res = mvc.perform(
+                        post("/api/trainings")
+                                .with(user(authUser).roles("TRAINER"))
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content(json)
+                )
+                .andExpect(status().isForbidden())
+                .andReturn();
+
+        lastStatus = res.getResponse().getStatus();
+    }
+
     @Then("response status should be {int}")
     public void statusShouldBe(int expected) {
         assertEquals(expected, lastStatus);
@@ -137,10 +209,14 @@ public class TrainingPublishSteps {
 
         WorkloadEventRequest ev = cap.getValue();
         assertNotNull(ev);
-
         assertEquals(trainerUsername, ev.getTrainerUsername());
         assertEquals(action, ev.getActionType());
         assertEquals(duration, ev.getTrainingDurationMinutes());
         assertEquals(LocalDate.parse(date), ev.getTrainingDate());
+    }
+
+    @Then("workload event should not be published")
+    public void notPublished() {
+        verify(workloadPublisher, never()).publish(any());
     }
 }
